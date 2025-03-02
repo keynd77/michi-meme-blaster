@@ -18,15 +18,14 @@ download the zip file (Green "Code" button -> "Download ZIP")
 
 
 **Features**:
-  General:
-    Click on the icon will show michi memes. you can copy them with right click -> copy
-  On X:
-    - Adds michi button
-      - **[click]**:  for quick access to michi memes
-      - **[shift + click]**:  add random michi meme
-      - **[shift + cmd + click]**: add "gmichi" + random meme
-  
-  Extra: 
-    - Michi mode: changes the x-like icon into a michi icon.
-    - Enable sound: adds a random cat sound (out of 7) to play whenever addign a meme. 
+General:
+	-	Click on the icon will show michi memes. you can copy them with right click -> copy
+On X:
+	-	Adds michi button
+      		-	**[click]**:  for quick access to michi memes
+      		-	**[shift + click]**:  add random michi meme
+      		-	**[shift + cmd + click]**: add "gmichi" + random meme
+Extra: 
+    -	Michi mode: changes the x-like icon into a michi icon.
+    -	Enable sound: adds a random cat sound (out of 7) to play whenever addign a meme. 
   
