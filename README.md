@@ -13,8 +13,8 @@ download the zip file (Green "Code" button -> "Download ZIP")
 	-	Select the folder where you cloned or extracted the extension.
 
 3. Use the Extension
-	•	The Michi Meme Blaster button should now appear in your X/Twitter interface.
-	•	Enjoy all the michi memes
+   	-	The Michi Meme Blaster button should now appear in your X/Twitter interface.
+	-	Enjoy all the michi memes
 
 
 **Features**:
