@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Michi Meme Blaster 6969",
+    "name": "Michi Meme Blaster",
     "version": "2.0.0",
     "description": "Michi meme assistant for Twitter—bullpost $michi fast and easy!",
     "permissions": ["activeTab", "scripting", "storage"],
