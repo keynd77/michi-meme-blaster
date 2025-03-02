@@ -1,31 +1,36 @@
-**Install & Load the Michi Meme Blaster Chrome Extension**
+# Michi Meme Blaster Chrome Extension
 
-download the zip file (Green "Code" button -> "Download ZIP")
+## Install & Load the Michi Meme Blaster Chrome Extension
 
-1. Open Chrome Extensions Page
-	-	Open Google Chrome.
-	-	Go to chrome://extensions/
-	-	Enable Developer Mode (toggle in the top right corner).
+### 1. Download the Extension
+- Click the green "Code" button
+- Select "Download ZIP"
+- Extract the ZIP file
 
+### 2. Open Chrome Extensions Page
+- Open Google Chrome
+- Go to `chrome://extensions/`
+- Enable Developer Mode (toggle in the top right corner)
 
-2. Load the Extension
-	-	Click Load unpacked.
-	-	Select the folder where you cloned or extracted the extension.
+### 3. Load the Extension
+- Click "Load unpacked"
+- Select the extracted folder
 
-3. Use the Extension
-   	-	The Michi Meme Blaster button should now appear in your X/Twitter interface.
-	-	Enjoy all the michi memes
+### 4. Use the Extension
+- The Michi Meme Blaster button should now appear in your X/Twitter interface
+- Start using and enjoying Michi memes
 
+## Features
 
-**Features**:
-General:
-	-	Click on the icon will show michi memes. you can copy them with right click -> copy
-On X:
-	-	Adds michi button
-      		-	**[click]**:  for quick access to michi memes
-      		-	**[shift + click]**:  add random michi meme
-      		-	**[shift + cmd + click]**: add "gmichi" + random meme
-Extra: 
-    -	Michi mode: changes the x-like icon into a michi icon.
-    -	Enable sound: adds a random cat sound (out of 7) to play whenever addign a meme. 
-  
+### General
+- Click on the icon to show Michi memes. You can copy them with right-click -> Copy
+
+### On X/Twitter
+- Adds a Michi button with different functionalities:
+  - **Click**: Open Michi meme selection
+  - **Shift + Click**: Add a random Michi meme
+  - **Shift + Cmd + Click** (Mac) / **Shift + Ctrl + Click** (Windows): Add "gmichi" + random meme
+
+### Extra Features
+- **Michi Mode**: Replaces the X/Twitter like icon with a Michi icon
+- **Enable Sound**: Plays a random cat sound (from 7 available sounds) when adding a meme
