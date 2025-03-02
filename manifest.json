@@ -1,0 +1,39 @@
+{
+    "manifest_version": 3,
+    "name": "Michi Meme Blaster 6969",
+    "version": "2.0.0",
+    "description": "michi meme assistant for bullposting memes fast. featuring michi costumes, cat, dressing cat, invinte memes, standing cat, michi, solana meme, crypto memes, bullposting.",
+    "permissions": ["activeTab", "scripting", "storage"],
+    "host_permissions": ["https://twitter.com/*", "https://x.com/*"],
+    "content_scripts": [
+      {
+        "matches": ["*://*.twitter.com/*", "*://*.x.com/*"],
+        "js": ["content.js"]
+      }
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "images.json",
+                "sentences.json",
+                "sound/sound_0.mp3",
+                "sound/sound_1.mp3",
+                "sound/sound_2.mp3",
+                "sound/sound_3.mp3",
+                "sound/sound_4.mp3",
+                "sound/sound_5.mp3",
+                "sound/sound_6.mp3"
+            ],
+            "matches": ["<all_urls>"]
+        }
+    ],
+    "icons": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+}

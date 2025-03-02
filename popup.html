@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Select Your Michi</title>
+    <style>
+        :root {
+            --bg-color: white;
+            --text-color: #544736;
+            --border-color: #544736;
+            --button-bg: #544736;
+            --button-hover: #544736;
+            --button-hover-color: #FAECCF;
+            --footer-text: #666;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #121212;
+                --text-color: #FAECCF;
+                --border-color: #FAECCF;
+                --button-bg: #FAECCF;
+                --button-hover: #FAECCF;
+                --button-hover-color: #000;
+                --footer-text: #faeccf8b;
+            }
+        }
+
+        body {
+            width: 250px;
+            height: 400px;
+            overflow-y: auto;
+            text-align: center;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .header, .footer {
+            position: fixed;
+            left: 0;
+            width: 100%;
+            background: var(--bg-color);
+            z-index: 100;
+            transition: background 0.3s;
+        }
+        
+        a {
+            color: var(--text-color);
+        }
+        a:hover {
+            color: var(--button-hover);
+        }
+        .header {
+            top: 0;
+            padding: 10px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .footer {
+            bottom: 0;
+            padding: 10px;
+            border-top: 2px solid var(--border-color);
+            font-size: 12px;
+            font-style: italic;
+            color: var(--footer-text);
+        }
+
+        .header h3 {
+            margin: 5px 0 0 0;
+        }
+
+        .header p {
+            color: var(--footer-text);
+            margin: 0;
+            padding: 0;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 3px 14px;
+            border: 2px solid var(--button-bg);
+            background: none;
+            color: var(--button-bg);
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: var(--button-bg);
+            color: var(--button-hover-color);
+        }
+        
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+            padding: 10px;
+            justify-content: center;
+            margin: 100px 0 40px;
+        }
+
+        .image-grid img {
+            width: 100%;
+            height: auto;
+            max-width: 100px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h3>Michi Meme Blaster 6969</h3>
+        <p>copy or download images with<br/><strong>[right click -> copy/save]</strong></p>
+        <div class="button-container">
+            <button id="allBtn">All</button>
+            <button id="randomBtn">Random</button>
+        </div>
+    </div>
+
+    <div id="imageContainer" class="image-grid"></div>
+
+    <div class="footer">
+        more at <a href="https://gmichi.meme" target="_blank">gmichi.meme</a>
+        <br>
+        <label style="display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 5px; cursor: pointer;">
+            Michi Mode
+            <input type="checkbox" id="toggleLikeReplace" style="cursor: pointer;">
+        </label>
+        <label>
+            Enable Sound
+            <input type="checkbox" id="toggleSound">
+        </label>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
