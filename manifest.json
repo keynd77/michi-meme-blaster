@@ -3,7 +3,7 @@
     "name": "Michi Meme Blaster",
     "version": "2.0.0",
     "description": "Michi meme assistant for Twitter—bullpost $michi fast and easy!",
-    "permissions": ["activeTab", "scripting", "storage"],
+    "permissions": ["activeTab", "storage"],
     "host_permissions": ["https://twitter.com/*", "https://x.com/*"],
     "content_scripts": [
       {
