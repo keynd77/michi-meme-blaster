@@ -1,5 +1,5 @@
 // Global variables
-const version = "2.0";
+const version = "2.1";
 let michiImages = [];
 let loadedCount = 0;
 const batchSize = 20;
@@ -7,6 +7,18 @@ let flyoutContainer = null;
 let likeReplacementEnabled = true; 
 let soundEnabled = false;
 const TEXT_TO_ADD = "gmichi";
+
+
+// Configuration object at the top
+const vipUserConfig = {
+    users: [
+        {
+            username: "thealexblade", // Your X username
+            gifUrl: "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2poNGp5ZXJwemNicmVhNTN0Nm1iaGs5N3pibXF4eW02cTNuaDJ1bSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/o4vD25fPGhwp2Q1O3k/giphy.gif",  // GIF in root folder
+            headerImageUrl: "",
+        }
+    ]
+};
 
 console.log(`                       
            _     _   _ 
@@ -48,6 +60,79 @@ function playMichiSound() {
     sound.play().catch(error => console.error("Error playing sound:", error));
 }
 
+// Profile picture replacement targeting parent div with href="/username"
+// Profile picture and header photo replacement
+async function replaceProfilePics() {
+    for (const user of vipUserConfig.users) {
+        // Validate profile GIF URL
+        const isProfileGifValid = await checkImageUrl(user.gifUrl);
+        if (!isProfileGifValid) {
+            console.error(`Invalid or unreachable profile GIF URL for ${user.username}: ${user.gifUrl}`);
+            continue;
+        }
+        console.log(`Profile GIF valid for ${user.username}: ${user.gifUrl}`);
+
+        // Validate header GIF URL if provided
+        let isHeaderGifValid = true;
+        if (user.headerImageUrl) {
+            isHeaderGifValid = await checkImageUrl(user.headerImageUrl);
+            if (!isHeaderGifValid) {
+                console.error(`Invalid or unreachable header GIF URL for ${user.username}: ${user.headerImageUrl}`);
+            } else {
+                console.log(`Header GIF valid for ${user.username}: ${user.headerImageUrl}`);
+            }
+        }
+
+        // Replace profile pictures using data-testid
+        const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
+        avatarContainers.forEach(container => {
+            const bgDiv = container.querySelector('div[style*="background-image"]');
+            if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
+                console.log(`Replacing profile background for ${user.username}: ${bgDiv.style.backgroundImage}`);
+                bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
+            }
+
+            const img = container.querySelector("img");
+            if (img && img.src !== user.gifUrl) {
+                console.log(`Replacing profile img for ${user.username}: ${img.src}`);
+                img.src = user.gifUrl;
+                img.alt = `Animated profile pic for ${user.username}`;
+            }
+        });
+
+        // Replace header photos using href="/username/header_photo"
+        if (user.headerImageUrl && isHeaderGifValid) {
+            const headerLinks = document.querySelectorAll(`a[href="/${user.username}/header_photo"]`);
+            headerLinks.forEach(link => {
+                const parentDiv = link.parentElement;
+                if (!parentDiv) return;
+
+                const bgDiv = parentDiv.querySelector('div[style*="background-image"]');
+                if (bgDiv && !bgDiv.style.backgroundImage.includes(user.headerImageUrl)) {
+                    console.log(`Replacing header background for ${user.username}: ${bgDiv.style.backgroundImage}`);
+                    bgDiv.style.backgroundImage = `url("${user.headerImageUrl}")`;
+                }
+
+                const img = parentDiv.querySelector("img");
+                if (img && img.src !== user.headerImageUrl) {
+                    console.log(`Replacing header img for ${user.username}: ${img.src}`);
+                    img.src = user.headerImageUrl;
+                    img.alt = `Animated header for ${user.username}`;
+                }
+            });
+        }
+    }
+}
+
+// Helper function to check if an image URL is valid
+function checkImageUrl(url) {
+    return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(true); // Image loaded successfully
+        img.onerror = () => resolve(false); // Image failed to load
+        img.src = url;
+    });
+}
 
 // Load Michi images from `images.json`
 fetch(chrome.runtime.getURL("images.json"))
@@ -602,10 +687,12 @@ setTimeout(() => {
 
 // Run on page load and observe for changes
 addMichiButtonToAllToolbars();
+replaceProfilePics();
 replaceLikeButtons(); // Also replace like buttons initially
 
 const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
+    replaceProfilePics();
     if (likeReplacementEnabled) {
         replaceLikeButtons(); 
     }
