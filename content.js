@@ -9,13 +9,25 @@ let soundEnabled = false;
 const TEXT_TO_ADD = "gmichi";
 
 
+function isVideoUrl(url) {
+    if (!url) return false;
+    
+    // Convert to lowercase for case-insensitive matching
+    const lowerUrl = url.toLowerCase();
+    
+    // Check for common video extensions
+    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.wmv', '.m4v', '.mpg', '.mpeg'];
+    return videoExtensions.some(ext => lowerUrl.endsWith(ext));
+}
+
 // Configuration object at the top
 const vipUserConfig = {
     users: [
         {
             username: "thealexblade", // Your X username
-            gifUrl: "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2poNGp5ZXJwemNicmVhNTN0Nm1iaGs5N3pibXF4eW02cTNuaDJ1bSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/o4vD25fPGhwp2Q1O3k/giphy.gif",  // GIF in root folder
-            headerImageUrl: "",
+            gifUrl: "https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2poNGp5ZXJwemNicmVhNTN0Nm1iaGs5N3pibXF4eW02cTNuaDJ1bSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/o4vD25fPGhwp2Q1O3k/giphy.gif",  // GIF in root folder    
+            headerImageUrl: "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExeDFkYTZlYW9jOXo0a3NwOHV2YmY2Yjh5M3BoOXBrM3d2OXI2bHI2ayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/4D9MUWzGHUgH4CuT2j/giphy.gif"
+            //headerImageUrl: "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExa2M1dWF0aHp1MDlicjJiZjBraWNjMHJ6czF2cW55dTRkYWV2ZmNvaCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/oDhofc3jh8D1alEo8u/giphy.gif"
         }
     ]
 };
@@ -72,18 +84,7 @@ async function replaceProfilePics() {
         }
         console.log(`Profile GIF valid for ${user.username}: ${user.gifUrl}`);
 
-        // Validate header GIF URL if provided
-        let isHeaderGifValid = true;
-        if (user.headerImageUrl) {
-            isHeaderGifValid = await checkImageUrl(user.headerImageUrl);
-            if (!isHeaderGifValid) {
-                console.error(`Invalid or unreachable header GIF URL for ${user.username}: ${user.headerImageUrl}`);
-            } else {
-                console.log(`Header GIF valid for ${user.username}: ${user.headerImageUrl}`);
-            }
-        }
-
-        // Replace profile pictures using data-testid
+        // Replace profile pictures using data-testid (exactly as original)
         const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
         avatarContainers.forEach(container => {
             const bgDiv = container.querySelector('div[style*="background-image"]');
@@ -100,24 +101,78 @@ async function replaceProfilePics() {
             }
         });
 
-        // Replace header photos using href="/username/header_photo"
-        if (user.headerImageUrl && isHeaderGifValid) {
+        // Check if header URL is provided
+        if (user.headerImageUrl) {
+            // Determine if the header is a video or an image based on file extension
+            const isVideo = isVideoUrl(user.headerImageUrl);
+            console.log(`Header URL for ${user.username} is a ${isVideo ? "video" : "GIF/image"}`);
+            
+            // Now handle header replacement based on the detected type
             const headerLinks = document.querySelectorAll(`a[href="/${user.username}/header_photo"]`);
             headerLinks.forEach(link => {
                 const parentDiv = link.parentElement;
                 if (!parentDiv) return;
+                
+                // If it's a video file, use video tag replacement method
+                if (isVideo) {
+                    // Skip if we already added a video
+                    if (parentDiv.querySelector('video.michi-header-video')) {
+                        return;
+                    }
+                    
+                    // Find the image to replace with video
+                    const img = parentDiv.querySelector("img");
+                    if (img) {
+                        console.log(`Replacing header with video for ${user.username}`);
+                        
+                        // Create video element
+                        const video = document.createElement("video");
+                        video.src = user.headerImageUrl;
+                        video.className = "michi-header-video";
+                        video.autoplay = true;
+                        video.loop = true;
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.controls = false;
+                        
+                        // Match styling
+                        video.style.width = img.style.width || "100%";
+                        video.style.height = img.style.height || "100%";
+                        video.style.objectFit = "cover";
+                        video.style.position = "absolute";
+                        video.style.top = "0";
+                        video.style.left = "0";
+                        
+                        // Replace image with video
+                        img.style.opacity = "0"; // Hide original image but keep layout
+                        img.parentNode.insertBefore(video, img);
+                    }
+                } 
+                // If it's a GIF/image, use the original method (background replacement)
+                else {
+                    // Check if header URL is valid
+                    checkImageUrl(user.headerImageUrl).then(isValid => {
+                        if (!isValid) {
+                            console.error(`Invalid or unreachable header URL for ${user.username}: ${user.headerImageUrl}`);
+                            return;
+                        }
+                        
+                        console.log(`Using original method for image header for ${user.username}`);
+                        
+                        // Use original method for GIF/image replacement
+                        const bgDiv = parentDiv.querySelector('div[style*="background-image"]');
+                        if (bgDiv && !bgDiv.style.backgroundImage.includes(user.headerImageUrl)) {
+                            console.log(`Replacing header background for ${user.username}: ${bgDiv.style.backgroundImage}`);
+                            bgDiv.style.backgroundImage = `url("${user.headerImageUrl}")`;
+                        }
 
-                const bgDiv = parentDiv.querySelector('div[style*="background-image"]');
-                if (bgDiv && !bgDiv.style.backgroundImage.includes(user.headerImageUrl)) {
-                    console.log(`Replacing header background for ${user.username}: ${bgDiv.style.backgroundImage}`);
-                    bgDiv.style.backgroundImage = `url("${user.headerImageUrl}")`;
-                }
-
-                const img = parentDiv.querySelector("img");
-                if (img && img.src !== user.headerImageUrl) {
-                    console.log(`Replacing header img for ${user.username}: ${img.src}`);
-                    img.src = user.headerImageUrl;
-                    img.alt = `Animated header for ${user.username}`;
+                        const img = parentDiv.querySelector("img");
+                        if (img && img.src !== user.headerImageUrl) {
+                            console.log(`Replacing header img for ${user.username}: ${img.src}`);
+                            img.src = user.headerImageUrl;
+                            img.alt = `Animated header for ${user.username}`;
+                        }
+                    });
                 }
             });
         }
