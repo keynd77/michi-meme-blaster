@@ -7,6 +7,11 @@ let flyoutContainer = null;
 let likeReplacementEnabled = true; 
 let soundEnabled = false;
 const TEXT_TO_ADD = "gmichi";
+let currentSearchPage = 1;
+let currentSearchQuery = "";
+let hasMoreSearchResults = true;
+let isSearching = false;
+let searchTimeout = null;
 
 
 function isVideoUrl(url) {
@@ -205,6 +210,74 @@ function shuffleArray(array) {
     return array;
 }
 
+async function searchImages(query, page = 1, size = 20) {
+    if (!query || query.trim() === "") {
+        return { images: [], pagination: null };
+    }
+
+    try {
+        const response = await fetch(`https://michi-meme-search.vercel.app/api/images?page=${page}&size=${size}&q=${encodeURIComponent(query.trim())}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Handle the specific API response structure
+        if (data && Array.isArray(data.images)) {
+            // Extract URLs from the image objects
+            const urls = data.images.map(image => image.url).filter(url => url);
+            return { images: urls, pagination: data.pagination };
+        } else {
+            console.warn("Unexpected API response format:", data);
+            return { images: [], pagination: null };
+        }
+        
+    } catch (error) {
+        console.error("Search error:", error);
+        return { images: [], pagination: null };
+    }
+}
+
+function showSearchResults(images) {
+    if (!flyoutContainer) return;
+    const imageGrid = document.getElementById("michi-grid");
+    if (!imageGrid) return;
+
+    imageGrid.innerHTML = "";
+    
+    images.forEach(url => {
+        const img = document.createElement("img");
+        img.src = url;
+        img.style.width = "100%";
+        img.style.height = "100px";
+        img.style.objectFit = "cover";
+        img.style.cursor = "pointer";
+        img.style.borderRadius = "5px";
+        img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
+        img.addEventListener("click", () => {
+            uploadImageToTweet(img.src);
+            closeFlyout();
+        });
+        imageGrid.appendChild(img);
+    });
+}
+
+function showSearchError(message) {
+    if (!flyoutContainer) return;
+    const imageGrid = document.getElementById("michi-grid");
+    if (!imageGrid) return;
+
+    imageGrid.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100px; color: ${getComputedStyle(document.body).color}; font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">${message}</div>`;
+}
+
 // Load initial state from storage
 chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled"], (data) => {
     likeReplacementEnabled = data.replaceLikeEnabled ?? true;
@@ -352,7 +425,9 @@ function shuffleArray(array) {
 // Function to create and open the flyout
 function openMichiFlyout(event, button) {
     const toolbar = button.closest('[data-testid="toolBar"]');
-    if (!toolbar) return;
+    if (!toolbar) {
+        return;
+    }
     
     const toolbarRect = toolbar.getBoundingClientRect();
 
@@ -376,10 +451,15 @@ function openMichiFlyout(event, button) {
 
     const header = document.createElement("div");
     header.style.display = "flex";
-    header.style.justifyContent = "space-around";
+    header.style.flexDirection = "column";
     header.style.padding = "8px";
     header.style.borderBottom = "1px solid rgb(47, 51, 54)";
     header.style.background = getComputedStyle(document.body).backgroundColor;
+
+    // Button container
+    const buttonContainer = document.createElement("div");
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.justifyContent = "space-around";
 
     const buttonStyle = `
         border: none;
@@ -398,6 +478,7 @@ function openMichiFlyout(event, button) {
     allBtn.style.cssText = buttonStyle;
     allBtn.onclick = () => {
         loadedCount = 0;
+        currentSearchQuery = "";
         loadMichiImages("all", true);
     };
     
@@ -411,6 +492,7 @@ function openMichiFlyout(event, button) {
             return;
         }
         
+        currentSearchQuery = "";
         const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
         uploadImageToTweet(randomImage, button); // Uploads a random image to the Twitter tweet field
         closeFlyout(); // Close the extension UI after inserting the image
@@ -423,9 +505,84 @@ function openMichiFlyout(event, button) {
         insertTextInTweetInput(TEXT_TO_ADD + " ");
     };
 
-    header.appendChild(allBtn);
-    header.appendChild(randomBtn);
-    header.appendChild(addTextBtn);
+    // Add search input
+    const searchContainer = document.createElement("div");
+    searchContainer.style.marginBottom = "8px";
+    searchContainer.style.display = "flex";
+    searchContainer.style.alignItems = "center";
+    searchContainer.style.justifyContent = "space-between";
+    searchContainer.style.width = "100%";
+    searchContainer.style.padding = "8px 12px";
+
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.placeholder = "search...";
+    searchInput.style.cssText = `
+        width: 120px;
+        padding: 8px 12px;
+        border: 2px solid rgb(29, 155, 240);
+        border-radius: 8px;
+        background: ${getComputedStyle(document.body).backgroundColor};
+        color: ${getComputedStyle(document.body).color};
+        font-size: 14px;
+        outline: none;
+        font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        box-sizing: border-box;
+    `;
+    
+    // Add grayer placeholder color
+    searchInput.style.setProperty('--placeholder-color', '#999');
+    searchInput.addEventListener('input', function() {
+        this.style.setProperty('--placeholder-color', '#999');
+    });
+
+    // Add search functionality
+    searchInput.addEventListener("input", (e) => {
+        const query = e.target.value.trim();
+        console.log("Search input:", query); // Debug log
+        
+        // Clear previous timeout
+        if (searchTimeout) {
+            clearTimeout(searchTimeout);
+        }
+        
+        // Set new timeout for debounced search
+        searchTimeout = setTimeout(async () => {
+            if (query.length >= 2) {
+                console.log("Searching for:", query); // Debug log
+                isSearching = true;
+                currentSearchPage = 1;
+                currentSearchQuery = query;
+                hasMoreSearchResults = true;
+                
+                console.log("Making API call..."); // Debug log
+                const result = await searchImages(query, 1);
+                console.log("API result:", result); // Debug log
+                
+                if (result.images.length === 0) {
+                    console.log("No results found"); // Debug log
+                    showSearchError("No results found. Try a different search term.");
+                } else {
+                    console.log("Found", result.images.length, "results"); // Debug log
+                    showSearchResults(result.images);
+                    hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
+                }
+                
+                isSearching = false;
+            } else if (query.length === 0) {
+                // Clear search and show all images
+                currentSearchQuery = "";
+                loadMichiImages("all", true);
+            }
+        }, 300);
+    });
+
+    searchContainer.appendChild(searchInput);
+    searchContainer.appendChild(allBtn);
+    searchContainer.appendChild(randomBtn);
+    searchContainer.appendChild(addTextBtn);
+    header.appendChild(searchContainer);
+    console.log("Search input added to flyout"); // Debug log
 
     // Create image grid container (middle content, **scrollable**)
     const imageContainer = document.createElement("div");
@@ -633,10 +790,52 @@ function insertTextInTweetInput(text) {
 
 // Handle scrolling inside flyout to load more images progressively
 function handleFlyoutScroll(imageContainer) {
-    if (!flyoutContainer) return;
-    if (imageContainer.scrollTop + imageContainer.clientHeight >= imageContainer.scrollHeight - 20) {
-        loadMichiImages("all"); // Load next batch when scrolled to bottom
+    if (imageContainer.scrollTop + imageContainer.clientHeight >= imageContainer.scrollHeight - 50) {
+        if (currentSearchQuery && currentSearchQuery.length >= 2) {
+            // Load more search results
+            if (!isSearching && hasMoreSearchResults) {
+                loadMoreSearchResults();
+            }
+        } else {
+            // Load more local images
+            loadMichiImages("all", false);
+        }
     }
+}
+
+async function loadMoreSearchResults() {
+    if (!currentSearchQuery || isSearching || !hasMoreSearchResults) return;
+    
+    isSearching = true;
+    currentSearchPage++;
+    
+    const result = await searchImages(currentSearchQuery, currentSearchPage);
+    
+    if (result.images.length > 0) {
+        const imageGrid = document.getElementById("michi-grid");
+        if (imageGrid) {
+            result.images.forEach(url => {
+                const img = document.createElement("img");
+                img.src = url;
+                img.style.width = "100%";
+                img.style.height = "100px";
+                img.style.objectFit = "cover";
+                img.style.cursor = "pointer";
+                img.style.borderRadius = "5px";
+                img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
+                img.addEventListener("click", () => {
+                    uploadImageToTweet(img.src);
+                    closeFlyout();
+                });
+                imageGrid.appendChild(img);
+            });
+        }
+        hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
+    } else {
+        hasMoreSearchResults = false;
+    }
+    
+    isSearching = false;
 }
 
 function closeFlyoutOnOutsideClick(e) {

@@ -83,7 +83,7 @@
 
         .search-container {
             margin: 10px 0;
-            padding: 5px 0;
+            padding: 8px 0;
             display: block;
             width: 100%;
             box-sizing: border-box;
@@ -101,6 +101,10 @@
             outline: none;
             transition: border-color 0.3s ease;
             box-sizing: border-box;
+        }
+
+        .search-input::placeholder {
+            color: #999;
         }
 
         .search-input:focus {
@@ -170,7 +174,7 @@
         <h3>Michi Meme Blaster 6969</h3>
         <p>copy or download images with<br /><strong>[right click -> copy/save]</strong></p>
         <div class="search-container">
-            <input type="text" id="searchInput" class="search-input" placeholder="Search memes..." />
+            <input type="text" id="searchInput" class="search-input" placeholder="search..." />
         </div>
         <div class="button-container">
             <button id="allBtn">All</button>
