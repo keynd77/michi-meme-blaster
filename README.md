@@ -24,6 +24,8 @@
 
 ### General
 - Click on the icon to show Michi memes. You can copy them with right-click -> Copy
+- **Search Feature**: Type in the search bar to find specific memes in real-time
+- **All/Random**: Switch between viewing all memes or random selection
 
 ### On X/Twitter
 - Adds a Michi button with different functionalities:
