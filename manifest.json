@@ -19,6 +19,7 @@
                 "*://*.x.com/*"
             ],
             "js": [
+                "utils.js",
                 "content.js"
             ]
         }
