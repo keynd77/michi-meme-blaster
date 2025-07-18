@@ -219,7 +219,7 @@ function showSearchResults(images) {
 
     imageGrid.innerHTML = "";
 
-    images.forEach(url => {
+    images.forEach(image => {
         const img = document.createElement("img");
         img.style.width = "100%";
         img.style.height = "100px";
@@ -228,12 +228,12 @@ function showSearchResults(images) {
         img.style.borderRadius = "5px";
         img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
         img.addEventListener("click", () => {
-            uploadImageToTweet(img.src, 'michi.sbs');
+            uploadImageToTweet(image.url, 'michi.sbs');
             closeFlyout();
         });
 
         // Set src after adding event listeners with cache busting
-        img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        img.src = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
         imageGrid.appendChild(img);
     });
 }
@@ -507,7 +507,6 @@ function openMichiFlyout(event, button) {
     // Add search functionality
     searchInput.addEventListener("input", (e) => {
         const query = e.target.value.trim();
-        console.log("Search input:", query); // Debug log
 
         // Clear previous timeout
         if (searchTimeout) {
@@ -522,15 +521,11 @@ function openMichiFlyout(event, button) {
                 currentSearchQuery = query;
                 hasMoreSearchResults = true;
 
-                console.log("Making API call..."); // Debug log
                 const result = await searchImages(query, 1);
-                console.log("API result:", result); // Debug log
 
                 if (result.images.length === 0) {
-                    console.log("No results found"); // Debug log
                     showSearchError("No results found. Try a different search term.");
                 } else {
-                    console.log("Found", result.images.length, "results"); // Debug log
                     showSearchResults(result.images);
                     hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
                 }
@@ -549,7 +544,6 @@ function openMichiFlyout(event, button) {
     searchContainer.appendChild(randomBtn);
     searchContainer.appendChild(addTextBtn);
     header.appendChild(searchContainer);
-    console.log("Search input added to flyout"); // Debug log
 
     // Create image grid container (middle content, **scrollable**)
     const imageContainer = document.createElement("div");
@@ -646,10 +640,26 @@ async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
         if (!response.ok) throw new Error("Failed to fetch media");
         const blob = await response.blob();
 
-        // Determine file extension based on content type
+        // Determine file extension and MIME type based on URL
         const isVideo = isVideoUrl(imageUrl);
         const fileName = isVideo ? "michi.mp4" : "michi.jpg";
-        const file = new File([blob], fileName, { type: blob.type });
+
+        // Use proper MIME types that Twitter recognizes
+        let mimeType;
+        if (isVideo) {
+            if (imageUrl.endsWith('.mp4')) mimeType = 'video/mp4';
+            else if (imageUrl.endsWith('.webm')) mimeType = 'video/webm';
+            else if (imageUrl.endsWith('.mov')) mimeType = 'video/quicktime';
+            else mimeType = 'video/mp4'; // Default for videos
+        } else {
+            if (imageUrl.endsWith('.jpg') || imageUrl.endsWith('.jpeg')) mimeType = 'image/jpeg';
+            else if (imageUrl.endsWith('.png')) mimeType = 'image/png';
+            else if (imageUrl.endsWith('.gif')) mimeType = 'image/gif';
+            else if (imageUrl.endsWith('.webp')) mimeType = 'image/webp';
+            else mimeType = 'image/jpeg'; // Default for images
+        }
+
+        const file = new File([blob], fileName, { type: mimeType });
 
         // Find the **correct file input** within the same toolbar as the clicked Michi button
         const toolbar = currentMichiButton.closest('[data-testid="ScrollSnap-List"]');
@@ -790,7 +800,7 @@ async function loadMoreSearchResults() {
     if (result.images.length > 0) {
         const imageGrid = document.getElementById("michi-grid");
         if (imageGrid) {
-            result.images.forEach(url => {
+            result.images.forEach(image => {
                 const img = document.createElement("img");
                 img.style.width = "100%";
                 img.style.height = "100px";
@@ -799,12 +809,12 @@ async function loadMoreSearchResults() {
                 img.style.borderRadius = "5px";
                 img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
                 img.addEventListener("click", () => {
-                    uploadImageToTweet(img.src, 'michi.sbs');
+                    uploadImageToTweet(image.url, 'michi.sbs');
                     closeFlyout();
                 });
 
                 // Set src after adding event listeners with cache busting
-                img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                img.src = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
                 imageGrid.appendChild(img);
             });
         }

@@ -64,7 +64,7 @@ function showLoading() {
 function showSearchResults(results, query) {
     container.innerHTML = "";
     if (results.length > 0) {
-        results.forEach(url => addImage(url));
+        results.forEach(image => addImage(image.thumbnailUrl));
     }
 }
 
@@ -82,21 +82,21 @@ window.addEventListener("scroll", async () => {
         loadNextBatch();
     }
     // Infinite scrolling for search results
-    else if (currentMode === "search" && !isSearching && hasMoreSearchResults && 
-             window.innerHeight + window.scrollY >= document.body.scrollHeight - 50) {
-        
+    else if (currentMode === "search" && !isSearching && hasMoreSearchResults &&
+        window.innerHeight + window.scrollY >= document.body.scrollHeight - 50) {
+
         isSearching = true;
         currentSearchPage++;
-        
+
         const result = await searchImages(currentSearchQuery, currentSearchPage);
-        
+
         if (result.images.length > 0) {
-            result.images.forEach(url => addImage(url));
+            result.images.forEach(image => addImage(image.thumbnailUrl));
             hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
         } else {
             hasMoreSearchResults = false;
         }
-        
+
         isSearching = false;
     }
 });
@@ -104,33 +104,33 @@ window.addEventListener("scroll", async () => {
 // Real-time search as user types
 searchInput.addEventListener("input", (e) => {
     const query = e.target.value.trim();
-    
+
     // Clear previous timeout
     if (searchTimeout) {
         clearTimeout(searchTimeout);
     }
-    
+
     // Set new timeout for debounced search
     searchTimeout = setTimeout(async () => {
         if (query.length >= 2) { // Only search if query is 2+ characters
             currentMode = "search";
             isSearching = true;
             showLoading();
-            
+
             // Reset search state for new query
             currentSearchPage = 1;
             currentSearchQuery = query;
             hasMoreSearchResults = true;
-            
+
             const result = await searchImages(query, 1);
-            
+
             if (result.images.length === 0) {
                 showError("No results found. Try a different search term.");
             } else {
                 showSearchResults(result.images, query);
                 hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
             }
-            
+
             isSearching = false;
         } else if (query.length === 0) {
             // Clear search and show all images
