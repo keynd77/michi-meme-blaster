@@ -636,7 +636,15 @@ async function uploadImageToTweet(imageUrl) {
     try {
         showLoadingOverlay();
 
-        const response = await fetch(imageUrl);
+        const response = await fetch(imageUrl, {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: {
+                'Accept': 'image/*',
+                'Cache-Control': 'no-cache'
+            }
+        });
         if (!response.ok) throw new Error("Failed to fetch image");
         const blob = await response.blob();
         const file = new File([blob], "michi.jpg", { type: blob.type });
