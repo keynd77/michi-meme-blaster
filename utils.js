@@ -24,8 +24,8 @@ async function searchImages(query, page = 1, size = 20) {
         // Handle the specific API response structure
         if (data && Array.isArray(data.images)) {
             // Extract URLs from the image objects
-            const urls = data.images.map(image => image.thumbnail_url).filter(url => url);
-            return { images: urls, pagination: data.pagination };
+            const imageData = data.images.filter(image => image.thumbnail_url && image.url).map(image => ({ url: image.url, thumbnailUrl: image.thumbnail_url }));
+            return { images: imageData, pagination: data.pagination };
         } else {
             console.warn("Unexpected API response format:", data);
             return { images: [], pagination: null };
