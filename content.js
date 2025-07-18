@@ -221,7 +221,6 @@ function showSearchResults(images) {
 
     images.forEach(url => {
         const img = document.createElement("img");
-        img.src = url;
         img.style.width = "100%";
         img.style.height = "100px";
         img.style.objectFit = "cover";
@@ -232,6 +231,9 @@ function showSearchResults(images) {
             uploadImageToTweet(img.src, 'michi.sbs');
             closeFlyout();
         });
+
+        // Set src after adding event listeners with cache busting
+        img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
         imageGrid.appendChild(img);
     });
 }
@@ -641,9 +643,13 @@ async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
             : { method: 'GET' };
 
         const response = await fetch(imageUrl, fetchOptions);
-        if (!response.ok) throw new Error("Failed to fetch image");
+        if (!response.ok) throw new Error("Failed to fetch media");
         const blob = await response.blob();
-        const file = new File([blob], "michi.jpg", { type: blob.type });
+
+        // Determine file extension based on content type
+        const isVideo = isVideoUrl(imageUrl);
+        const fileName = isVideo ? "michi.mp4" : "michi.jpg";
+        const file = new File([blob], fileName, { type: blob.type });
 
         // Find the **correct file input** within the same toolbar as the clicked Michi button
         const toolbar = currentMichiButton.closest('[data-testid="ScrollSnap-List"]');
@@ -676,7 +682,7 @@ async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
         }
 
     } catch (error) {
-        console.error("Error uploading image:", error);
+        console.error("Error uploading media:", error);
     } finally {
         hideLoadingOverlay();
     }
@@ -786,7 +792,6 @@ async function loadMoreSearchResults() {
         if (imageGrid) {
             result.images.forEach(url => {
                 const img = document.createElement("img");
-                img.src = url;
                 img.style.width = "100%";
                 img.style.height = "100px";
                 img.style.objectFit = "cover";
@@ -797,6 +802,9 @@ async function loadMoreSearchResults() {
                     uploadImageToTweet(img.src, 'michi.sbs');
                     closeFlyout();
                 });
+
+                // Set src after adding event listeners with cache busting
+                img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
                 imageGrid.appendChild(img);
             });
         }
