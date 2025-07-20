@@ -4,17 +4,22 @@ let michiImages = [];
 let loadedCount = 0;
 const batchSize = 20;
 let flyoutContainer = null;
-let likeReplacementEnabled = true; 
+let likeReplacementEnabled = true;
 let soundEnabled = false;
 const TEXT_TO_ADD = "gmichi";
+let currentSearchPage = 1;
+let currentSearchQuery = "";
+let hasMoreSearchResults = true;
+let isSearching = false;
+let searchTimeout = null;
 
 
 function isVideoUrl(url) {
     if (!url) return false;
-    
+
     // Convert to lowercase for case-insensitive matching
     const lowerUrl = url.toLowerCase();
-    
+
     // Check for common video extensions
     const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.wmv', '.m4v', '.mpg', '.mpeg'];
     return videoExtensions.some(ext => lowerUrl.endsWith(ext));
@@ -106,25 +111,25 @@ async function replaceProfilePics() {
             // Determine if the header is a video or an image based on file extension
             const isVideo = isVideoUrl(user.headerImageUrl);
             console.log(`Header URL for ${user.username} is a ${isVideo ? "video" : "GIF/image"}`);
-            
+
             // Now handle header replacement based on the detected type
             const headerLinks = document.querySelectorAll(`a[href="/${user.username}/header_photo"]`);
             headerLinks.forEach(link => {
                 const parentDiv = link.parentElement;
                 if (!parentDiv) return;
-                
+
                 // If it's a video file, use video tag replacement method
                 if (isVideo) {
                     // Skip if we already added a video
                     if (parentDiv.querySelector('video.michi-header-video')) {
                         return;
                     }
-                    
+
                     // Find the image to replace with video
                     const img = parentDiv.querySelector("img");
                     if (img) {
                         console.log(`Replacing header with video for ${user.username}`);
-                        
+
                         // Create video element
                         const video = document.createElement("video");
                         video.src = user.headerImageUrl;
@@ -134,7 +139,7 @@ async function replaceProfilePics() {
                         video.muted = true;
                         video.playsInline = true;
                         video.controls = false;
-                        
+
                         // Match styling
                         video.style.width = img.style.width || "100%";
                         video.style.height = img.style.height || "100%";
@@ -142,12 +147,12 @@ async function replaceProfilePics() {
                         video.style.position = "absolute";
                         video.style.top = "0";
                         video.style.left = "0";
-                        
+
                         // Replace image with video
                         img.style.opacity = "0"; // Hide original image but keep layout
                         img.parentNode.insertBefore(video, img);
                     }
-                } 
+                }
                 // If it's a GIF/image, use the original method (background replacement)
                 else {
                     // Check if header URL is valid
@@ -156,9 +161,9 @@ async function replaceProfilePics() {
                             console.error(`Invalid or unreachable header URL for ${user.username}: ${user.headerImageUrl}`);
                             return;
                         }
-                        
+
                         console.log(`Using original method for image header for ${user.username}`);
-                        
+
                         // Use original method for GIF/image replacement
                         const bgDiv = parentDiv.querySelector('div[style*="background-image"]');
                         if (bgDiv && !bgDiv.style.backgroundImage.includes(user.headerImageUrl)) {
@@ -193,7 +198,7 @@ function checkImageUrl(url) {
 fetch(chrome.runtime.getURL("images.json"))
     .then(response => response.json())
     .then(data => {
-        michiImages = shuffleArray(data); 
+        michiImages = shuffleArray(data);
     })
     .catch(error => console.error("Error loading Michi images:", error));
 
@@ -203,6 +208,42 @@ function shuffleArray(array) {
         [array[i], array[j]] = [array[j], array[i]]; // Swap elements
     }
     return array;
+}
+
+// searchImages function is now imported from utils.js
+
+function showSearchResults(images) {
+    if (!flyoutContainer) return;
+    const imageGrid = document.getElementById("michi-grid");
+    if (!imageGrid) return;
+
+    imageGrid.innerHTML = "";
+
+    images.forEach(image => {
+        const img = document.createElement("img");
+        img.style.width = "100%";
+        img.style.height = "100px";
+        img.style.objectFit = "cover";
+        img.style.cursor = "pointer";
+        img.style.borderRadius = "5px";
+        img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
+        img.addEventListener("click", () => {
+            uploadImageToTweet(image.url, 'michi.sbs');
+            closeFlyout();
+        });
+
+        // Set src after adding event listeners with cache busting
+        img.src = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        imageGrid.appendChild(img);
+    });
+}
+
+function showSearchError(message) {
+    if (!flyoutContainer) return;
+    const imageGrid = document.getElementById("michi-grid");
+    if (!imageGrid) return;
+
+    imageGrid.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100px; color: ${getComputedStyle(document.body).color}; font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">${message}</div>`;
 }
 
 // Load initial state from storage
@@ -233,7 +274,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
 // Function to try and find the image button by aria-label in different languages
 function findAddPhotoButtons() {
-    return [...document.querySelectorAll('button[aria-label]')].filter(button => 
+    return [...document.querySelectorAll('button[aria-label]')].filter(button =>
         Object.values(buttonLabels).includes(button.getAttribute('aria-label'))
     );
 }
@@ -291,24 +332,24 @@ function createMichiButton() {
 }
 
 async function handleShiftClickMichiButton() {
-    showLoadingOverlay(); 
+    showLoadingOverlay();
 
     const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
     await uploadImageToTweet(randomImage);
 
-    hideLoadingOverlay(); 
+    hideLoadingOverlay();
 }
 
 async function handleCmdShiftClickMichiButton() {
-    showLoadingOverlay(); 
-    insertTextInTweetInput(TEXT_TO_ADD + " "); 
+    showLoadingOverlay();
+    insertTextInTweetInput(TEXT_TO_ADD + " ");
 
-    await new Promise(resolve => setTimeout(resolve, 300)); 
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-    await uploadImageToTweet(randomImage); 
+    await uploadImageToTweet(randomImage);
 
-    hideLoadingOverlay(); 
+    hideLoadingOverlay();
 }
 
 function getRandomImageUrl() {
@@ -352,8 +393,10 @@ function shuffleArray(array) {
 // Function to create and open the flyout
 function openMichiFlyout(event, button) {
     const toolbar = button.closest('[data-testid="toolBar"]');
-    if (!toolbar) return;
-    
+    if (!toolbar) {
+        return;
+    }
+
     const toolbarRect = toolbar.getBoundingClientRect();
 
     loadedCount = 0;
@@ -376,10 +419,15 @@ function openMichiFlyout(event, button) {
 
     const header = document.createElement("div");
     header.style.display = "flex";
-    header.style.justifyContent = "space-around";
+    header.style.flexDirection = "column";
     header.style.padding = "8px";
     header.style.borderBottom = "1px solid rgb(47, 51, 54)";
     header.style.background = getComputedStyle(document.body).backgroundColor;
+
+    // Button container
+    const buttonContainer = document.createElement("div");
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.justifyContent = "space-around";
 
     const buttonStyle = `
         border: none;
@@ -398,9 +446,10 @@ function openMichiFlyout(event, button) {
     allBtn.style.cssText = buttonStyle;
     allBtn.onclick = () => {
         loadedCount = 0;
+        currentSearchQuery = "";
         loadMichiImages("all", true);
     };
-    
+
     // Create "Random" button
     const randomBtn = document.createElement("button");
     randomBtn.textContent = "Random";
@@ -410,27 +459,96 @@ function openMichiFlyout(event, button) {
             console.error("No Michi images available.");
             return;
         }
-        
+
+        currentSearchQuery = "";
         const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
         uploadImageToTweet(randomImage, button); // Uploads a random image to the Twitter tweet field
         closeFlyout(); // Close the extension UI after inserting the image
     };
 
     const addTextBtn = document.createElement("button");
-        addTextBtn.textContent = "Add Gmichi";
-        addTextBtn.style.cssText = buttonStyle;
-        addTextBtn.onclick = () => {
+    addTextBtn.textContent = "Add Gmichi";
+    addTextBtn.style.cssText = buttonStyle;
+    addTextBtn.onclick = () => {
         insertTextInTweetInput(TEXT_TO_ADD + " ");
     };
 
-    header.appendChild(allBtn);
-    header.appendChild(randomBtn);
-    header.appendChild(addTextBtn);
+    // Add search input
+    const searchContainer = document.createElement("div");
+    searchContainer.style.marginBottom = "8px";
+    searchContainer.style.display = "flex";
+    searchContainer.style.alignItems = "center";
+    searchContainer.style.justifyContent = "space-between";
+    searchContainer.style.width = "100%";
+    searchContainer.style.padding = "8px 12px";
+
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.placeholder = "search...";
+    searchInput.style.cssText = `
+        width: 120px;
+        padding: 8px 12px;
+        border: 2px solid rgb(29, 155, 240);
+        border-radius: 8px;
+        background: ${getComputedStyle(document.body).backgroundColor};
+        color: ${getComputedStyle(document.body).color};
+        font-size: 14px;
+        outline: none;
+        font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        box-sizing: border-box;
+    `;
+
+    // Add grayer placeholder color
+    searchInput.style.setProperty('--placeholder-color', '#999');
+    searchInput.addEventListener('input', function () {
+        this.style.setProperty('--placeholder-color', '#999');
+    });
+
+    // Add search functionality
+    searchInput.addEventListener("input", (e) => {
+        const query = e.target.value.trim();
+
+        // Clear previous timeout
+        if (searchTimeout) {
+            clearTimeout(searchTimeout);
+        }
+
+        // Set new timeout for debounced search
+        searchTimeout = setTimeout(async () => {
+            if (query.length >= 2) {
+                isSearching = true;
+                currentSearchPage = 1;
+                currentSearchQuery = query;
+                hasMoreSearchResults = true;
+
+                const result = await searchImages(query, 1);
+
+                if (result.images.length === 0) {
+                    showSearchError("No results found. Try a different search term.");
+                } else {
+                    showSearchResults(result.images);
+                    hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
+                }
+
+                isSearching = false;
+            } else if (query.length === 0) {
+                // Clear search and show all images
+                currentSearchQuery = "";
+                loadMichiImages("all", true);
+            }
+        }, 300);
+    });
+
+    searchContainer.appendChild(searchInput);
+    searchContainer.appendChild(allBtn);
+    searchContainer.appendChild(randomBtn);
+    searchContainer.appendChild(addTextBtn);
+    header.appendChild(searchContainer);
 
     // Create image grid container (middle content, **scrollable**)
     const imageContainer = document.createElement("div");
-    imageContainer.style.flex = "1"; 
-    imageContainer.style.overflowY = "auto"; 
+    imageContainer.style.flex = "1";
+    imageContainer.style.overflowY = "auto";
     imageContainer.style.padding = "10px";
 
     const imageGrid = document.createElement("div");
@@ -457,7 +575,7 @@ function openMichiFlyout(event, button) {
 
     // Attach scroll event for lazy loading
     imageContainer.addEventListener("scroll", () => handleFlyoutScroll(imageContainer));
-   
+
     // Re-add both event listeners every time the flyout opens
     setTimeout(() => {
         document.addEventListener("click", closeFlyoutOnOutsideClick);
@@ -484,7 +602,7 @@ function loadMichiImages(mode, reset = false) {
         imagesToLoad = michiImages.slice(loadedCount, loadedCount + batchSize);
         loadedCount += batchSize;
     }
-    
+
 
     const batch = imagesToLoad;
     batch.forEach(url => {
@@ -509,14 +627,39 @@ function loadMichiImages(mode, reset = false) {
     loadedCount += batch.length;
 }
 
-async function uploadImageToTweet(imageUrl) {
+async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
     try {
         showLoadingOverlay();
 
-        const response = await fetch(imageUrl);
-        if (!response.ok) throw new Error("Failed to fetch image");
+        // Configure fetch options based on image source
+        const fetchOptions = imageSource === 'michi.sbs'
+            ? { method: 'GET', mode: 'cors', credentials: 'omit', headers: { 'Cache-Control': 'no-cache' } }
+            : { method: 'GET' };
+
+        const response = await fetch(imageUrl, fetchOptions);
+        if (!response.ok) throw new Error("Failed to fetch media");
         const blob = await response.blob();
-        const file = new File([blob], "michi.jpg", { type: blob.type });
+
+        // Determine file extension and MIME type based on URL
+        const isVideo = isVideoUrl(imageUrl);
+        const fileName = isVideo ? "michi.mp4" : "michi.jpg";
+
+        // Use proper MIME types that Twitter recognizes
+        let mimeType;
+        if (isVideo) {
+            if (imageUrl.endsWith('.mp4')) mimeType = 'video/mp4';
+            else if (imageUrl.endsWith('.webm')) mimeType = 'video/webm';
+            else if (imageUrl.endsWith('.mov')) mimeType = 'video/quicktime';
+            else mimeType = 'video/mp4'; // Default for videos
+        } else {
+            if (imageUrl.endsWith('.jpg') || imageUrl.endsWith('.jpeg')) mimeType = 'image/jpeg';
+            else if (imageUrl.endsWith('.png')) mimeType = 'image/png';
+            else if (imageUrl.endsWith('.gif')) mimeType = 'image/gif';
+            else if (imageUrl.endsWith('.webp')) mimeType = 'image/webp';
+            else mimeType = 'image/jpeg'; // Default for images
+        }
+
+        const file = new File([blob], fileName, { type: mimeType });
 
         // Find the **correct file input** within the same toolbar as the clicked Michi button
         const toolbar = currentMichiButton.closest('[data-testid="ScrollSnap-List"]');
@@ -549,7 +692,7 @@ async function uploadImageToTweet(imageUrl) {
         }
 
     } catch (error) {
-        console.error("Error uploading image:", error);
+        console.error("Error uploading media:", error);
     } finally {
         hideLoadingOverlay();
     }
@@ -615,7 +758,7 @@ function hideLoadingOverlay() {
         if (overlay) {
             overlay.remove();
         }
-    }, 500); 
+    }, 500);
 }
 
 // Function to insert text into tweet input
@@ -633,10 +776,54 @@ function insertTextInTweetInput(text) {
 
 // Handle scrolling inside flyout to load more images progressively
 function handleFlyoutScroll(imageContainer) {
-    if (!flyoutContainer) return;
-    if (imageContainer.scrollTop + imageContainer.clientHeight >= imageContainer.scrollHeight - 20) {
-        loadMichiImages("all"); // Load next batch when scrolled to bottom
+    if (imageContainer.scrollTop + imageContainer.clientHeight >= imageContainer.scrollHeight - 50) {
+        if (currentSearchQuery && currentSearchQuery.length >= 2) {
+            // Load more search results
+            if (!isSearching && hasMoreSearchResults) {
+                loadMoreSearchResults();
+            }
+        } else {
+            // Load more local images
+            loadMichiImages("all", false);
+        }
     }
+}
+
+async function loadMoreSearchResults() {
+    if (!currentSearchQuery || isSearching || !hasMoreSearchResults) return;
+
+    isSearching = true;
+    currentSearchPage++;
+
+    const result = await searchImages(currentSearchQuery, currentSearchPage);
+
+    if (result.images.length > 0) {
+        const imageGrid = document.getElementById("michi-grid");
+        if (imageGrid) {
+            result.images.forEach(image => {
+                const img = document.createElement("img");
+                img.style.width = "100%";
+                img.style.height = "100px";
+                img.style.objectFit = "cover";
+                img.style.cursor = "pointer";
+                img.style.borderRadius = "5px";
+                img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
+                img.addEventListener("click", () => {
+                    uploadImageToTweet(image.url, 'michi.sbs');
+                    closeFlyout();
+                });
+
+                // Set src after adding event listeners with cache busting
+                img.src = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                imageGrid.appendChild(img);
+            });
+        }
+        hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
+    } else {
+        hasMoreSearchResults = false;
+    }
+
+    isSearching = false;
 }
 
 function closeFlyoutOnOutsideClick(e) {
@@ -686,9 +873,9 @@ function addMichiButtonToAllToolbars() {
 }
 
 const likeButtonPaths = {
-    default: "M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z", 
+    default: "M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z",
     liked: "M20.884 13.19c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z" // Filled (liked) heart button
-}
+};
 
 // to replace matching SVGs with Michi SVG
 function replaceLikeButtons() {
@@ -708,7 +895,7 @@ function replaceLikeButtons() {
             svg.style.height = "22px";
         }
     });
-} 
+}
 
 function restoreOriginalLikeButtons() {
     // Restore unliked buttons
@@ -749,7 +936,7 @@ const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
     replaceProfilePics();
     if (likeReplacementEnabled) {
-        replaceLikeButtons(); 
+        replaceLikeButtons();
     }
 });
 
