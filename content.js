@@ -7,6 +7,7 @@ let flyoutContainer = null;
 let flyoutToolbar = null;
 let likeReplacementEnabled = true;
 let soundEnabled = false;
+let quickFireAutoPost = false;
 const TEXT_TO_ADD = "gmichi";
 let currentSearchPage = 1;
 let currentSearchQuery = "";
@@ -283,9 +284,10 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
 }
 
 // Load initial state from storage
-chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled"], (data) => {
+chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireAutoPost"], (data) => {
     likeReplacementEnabled = data.replaceLikeEnabled ?? true;
-    soundEnabled = data.soundEnabled ?? false; // Load sound setting
+    soundEnabled = data.soundEnabled ?? false;
+    quickFireAutoPost = data.quickFireAutoPost ?? false; // Load sound setting
 
     if (likeReplacementEnabled) {
         replaceLikeButtons();
@@ -305,6 +307,10 @@ chrome.runtime.onMessage.addListener((message) => {
 
     if (message.soundEnabled !== undefined) {
         soundEnabled = message.soundEnabled; // Update sound setting when changed
+    }
+
+    if (message.quickFireAutoPost !== undefined) {
+        quickFireAutoPost = message.quickFireAutoPost;
     }
 });
 
@@ -542,6 +548,62 @@ function openMichiFlyout(event, button) {
         });
     };
 
+    const gearBtn = document.createElement("button");
+    gearBtn.textContent = "\u2699";
+    gearBtn.style.cssText = buttonStyle;
+    gearBtn.style.fontSize = "18px";
+    gearBtn.onclick = () => {
+        const imageGrid = document.getElementById("michi-grid");
+        const settingsPanel = document.getElementById("michi-settings");
+        if (settingsPanel) {
+            settingsPanel.remove();
+            imageGrid.style.display = "";
+        } else {
+            imageGrid.style.display = "none";
+            const panel = document.createElement("div");
+            panel.id = "michi-settings";
+            panel.style.cssText = `
+                padding: 16px;
+                font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                color: ${getComputedStyle(document.body).color};
+                font-size: 14px;
+            `;
+
+            const makeToggle = (label, key, currentValue) => {
+                const row = document.createElement("div");
+                row.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgb(47, 51, 54);";
+
+                const labelEl = document.createElement("span");
+                labelEl.textContent = label;
+
+                const toggle = document.createElement("input");
+                toggle.type = "checkbox";
+                toggle.checked = currentValue;
+                toggle.style.cssText = "width: 18px; height: 18px; cursor: pointer;";
+                toggle.addEventListener("change", () => {
+                    chrome.storage.sync.set({ [key]: toggle.checked });
+                    if (key === 'soundEnabled') soundEnabled = toggle.checked;
+                    if (key === 'replaceLikeEnabled') {
+                        likeReplacementEnabled = toggle.checked;
+                        if (toggle.checked) replaceLikeButtons();
+                        else restoreOriginalLikeButtons();
+                    }
+                    if (key === 'quickFireAutoPost') quickFireAutoPost = toggle.checked;
+                });
+
+                row.appendChild(labelEl);
+                row.appendChild(toggle);
+                return row;
+            };
+
+            panel.appendChild(makeToggle("Quick Fire: Auto-post", "quickFireAutoPost", quickFireAutoPost));
+            panel.appendChild(makeToggle("Sound Effects", "soundEnabled", soundEnabled));
+            panel.appendChild(makeToggle("Michi Mode (replace hearts)", "replaceLikeEnabled", likeReplacementEnabled));
+
+            imageGrid.parentNode.insertBefore(panel, imageGrid);
+        }
+    };
+
     // Add search input
     const searchContainer = document.createElement("div");
     searchContainer.style.marginBottom = "8px";
@@ -613,6 +675,7 @@ function openMichiFlyout(event, button) {
     searchContainer.appendChild(randomBtn);
     searchContainer.appendChild(favBtn);
     searchContainer.appendChild(addTextBtn);
+    searchContainer.appendChild(gearBtn);
     header.appendChild(searchContainer);
 
     // Create image grid container (middle content, **scrollable**)
