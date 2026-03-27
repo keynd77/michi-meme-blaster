@@ -4,6 +4,7 @@ let michiImages = [];
 let loadedCount = 0;
 const batchSize = 20;
 let flyoutContainer = null;
+let flyoutToolbar = null;
 let likeReplacementEnabled = true;
 let soundEnabled = false;
 const TEXT_TO_ADD = "gmichi";
@@ -212,29 +213,18 @@ function shuffleArray(array) {
 
 // searchImages function is now imported from utils.js
 
-function showSearchResults(images) {
+async function showSearchResults(images) {
     if (!flyoutContainer) return;
     const imageGrid = document.getElementById("michi-grid");
     if (!imageGrid) return;
 
     imageGrid.innerHTML = "";
+    const favorites = await getFavorites();
 
     images.forEach(image => {
-        const img = document.createElement("img");
-        img.style.width = "100%";
-        img.style.height = "100px";
-        img.style.objectFit = "cover";
-        img.style.cursor = "pointer";
-        img.style.borderRadius = "5px";
-        img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
-        img.addEventListener("click", () => {
-            uploadImageToTweet(image.url, 'michi.sbs');
-            closeFlyout();
-        });
-
-        // Set src after adding event listeners with cache busting
-        img.src = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
-        imageGrid.appendChild(img);
+        const thumbUrl = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        const thumb = createMemeThumb(image.url, thumbUrl, 'michi.meme', favorites);
+        imageGrid.appendChild(thumb);
     });
 }
 
@@ -244,6 +234,52 @@ function showSearchError(message) {
     if (!imageGrid) return;
 
     imageGrid.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100px; color: ${getComputedStyle(document.body).color}; font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">${message}</div>`;
+}
+
+// Create a meme thumbnail with favorite star overlay for the flyout
+function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
+    const wrapper = document.createElement("div");
+    wrapper.style.position = "relative";
+    wrapper.style.overflow = "hidden";
+    wrapper.style.borderRadius = "5px";
+    wrapper.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
+
+    const img = document.createElement("img");
+    img.style.width = "100%";
+    img.style.height = "100px";
+    img.style.objectFit = "cover";
+    img.style.cursor = "pointer";
+    img.style.display = "block";
+    img.addEventListener("click", () => {
+        uploadImageToTweet(imageUrl, sourceType);
+        closeFlyout();
+    });
+    img.src = thumbnailUrl;
+
+    const star = document.createElement("div");
+    star.className = "michi-fav-star";
+    star.style.cssText = `
+        position: absolute; top: 4px; right: 4px;
+        width: 22px; height: 22px;
+        cursor: pointer; z-index: 2;
+        font-size: 16px; line-height: 22px; text-align: center;
+        background: rgba(0,0,0,0.5); border-radius: 50%;
+        user-select: none;
+    `;
+    const isFav = isFavorite(imageUrl, favorites);
+    star.textContent = isFav ? "\u2605" : "\u2606";
+    star.style.color = isFav ? "#FFD700" : "#fff";
+    star.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const updated = await toggleFavorite(imageUrl);
+        const nowFav = isFavorite(imageUrl, updated);
+        star.textContent = nowFav ? "\u2605" : "\u2606";
+        star.style.color = nowFav ? "#FFD700" : "#fff";
+    });
+
+    wrapper.appendChild(img);
+    wrapper.appendChild(star);
+    return wrapper;
 }
 
 // Load initial state from storage
@@ -371,14 +407,23 @@ function closeFlyout() {
     if (flyoutContainer) {
         flyoutContainer.remove();
         flyoutContainer = null;
+        flyoutToolbar = null;
         document.removeEventListener("click", closeFlyoutOnOutsideClick);
-        document.removeEventListener("scroll", closeFlyoutOnScroll); // Remove scroll event
+        window.removeEventListener("scroll", updateFlyoutPosition, true);
+        window.removeEventListener("resize", updateFlyoutPosition);
     }
 }
 
-// Function to close flyout when scrolling the body
-function closeFlyoutOnScroll() {
-    closeFlyout();
+// Reposition flyout to stay aligned with its toolbar
+function updateFlyoutPosition() {
+    if (!flyoutContainer || !flyoutToolbar) return;
+    const rect = flyoutToolbar.getBoundingClientRect();
+    const availableHeight = window.innerHeight - rect.bottom - 20;
+    const flyoutHeight = Math.max(200, Math.min(availableHeight, 500));
+    flyoutContainer.style.left = `${rect.left}px`;
+    flyoutContainer.style.top = `${rect.bottom}px`;
+    flyoutContainer.style.width = `${rect.width}px`;
+    flyoutContainer.style.height = `${flyoutHeight}px`;
 }
 
 function shuffleArray(array) {
@@ -397,15 +442,19 @@ function openMichiFlyout(event, button) {
         return;
     }
 
+    flyoutToolbar = toolbar;
     const toolbarRect = toolbar.getBoundingClientRect();
 
     loadedCount = 0;
 
     flyoutContainer = document.createElement("div");
     flyoutContainer.id = "michi-flyout";
+    const availableHeight = window.innerHeight - toolbarRect.bottom - 20;
+    const flyoutHeight = Math.max(200, Math.min(availableHeight, 500));
+
     flyoutContainer.style.position = "fixed";
     flyoutContainer.style.width = `${toolbarRect.width}px`;
-    flyoutContainer.style.height = "250px";
+    flyoutContainer.style.height = `${flyoutHeight}px`;
     flyoutContainer.style.background = getComputedStyle(document.body).backgroundColor;
     flyoutContainer.style.borderLeft = "1px solid rgb(47, 51, 54)";
     flyoutContainer.style.borderRight = "1px solid rgb(47, 51, 54)";
@@ -576,15 +625,18 @@ function openMichiFlyout(event, button) {
     // Attach scroll event for lazy loading
     imageContainer.addEventListener("scroll", () => handleFlyoutScroll(imageContainer));
 
-    // Re-add both event listeners every time the flyout opens
+    // Re-add event listeners every time the flyout opens
     setTimeout(() => {
         document.addEventListener("click", closeFlyoutOnOutsideClick);
-        window.addEventListener("scroll", closeFlyoutOnScroll, { passive: true });
     }, 100);
+
+    // Keep flyout position in sync on scroll/resize
+    window.addEventListener("scroll", updateFlyoutPosition, { capture: true, passive: true });
+    window.addEventListener("resize", updateFlyoutPosition);
 }
 
 // Function to load images in batches **with correct lazy loading**
-function loadMichiImages(mode, reset = false) {
+async function loadMichiImages(mode, reset = false) {
     if (!flyoutContainer) return;
     const imageGrid = document.getElementById("michi-grid");
     if (!imageGrid) return;
@@ -605,26 +657,11 @@ function loadMichiImages(mode, reset = false) {
 
 
     const batch = imagesToLoad;
+    const favorites = await getFavorites();
     batch.forEach(url => {
-        const img = document.createElement("img");
-        img.src = url;
-        img.style.width = "100%";
-        img.style.height = "100px";
-        img.style.objectFit = "cover";
-        img.style.cursor = "pointer";
-        img.style.borderRadius = "5px";
-        img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
-        img.addEventListener("click", async () => {
-            console.log("Selected Image URL:", img.src); // Log the image URL instead
-        });
-        img.addEventListener("click", () => {
-            uploadImageToTweet(img.src); // Uploads the image to Twitter tweet field
-            closeFlyout(); // Optional: Close the extension UI
-        });
-        imageGrid.appendChild(img);
+        const thumb = createMemeThumb(url, url, 'admin.gmichi.meme', favorites);
+        imageGrid.appendChild(thumb);
     });
-
-    loadedCount += batch.length;
 }
 
 async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
@@ -632,7 +669,7 @@ async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
         showLoadingOverlay();
 
         // Configure fetch options based on image source
-        const fetchOptions = imageSource === 'michi.sbs'
+        const fetchOptions = imageSource === 'michi.meme'
             ? { method: 'GET', mode: 'cors', credentials: 'omit', headers: { 'Cache-Control': 'no-cache' } }
             : { method: 'GET' };
 
@@ -798,24 +835,13 @@ async function loadMoreSearchResults() {
     const result = await searchImages(currentSearchQuery, currentSearchPage);
 
     if (result.images.length > 0) {
+        const favorites = await getFavorites();
         const imageGrid = document.getElementById("michi-grid");
         if (imageGrid) {
             result.images.forEach(image => {
-                const img = document.createElement("img");
-                img.style.width = "100%";
-                img.style.height = "100px";
-                img.style.objectFit = "cover";
-                img.style.cursor = "pointer";
-                img.style.borderRadius = "5px";
-                img.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
-                img.addEventListener("click", () => {
-                    uploadImageToTweet(image.url, 'michi.sbs');
-                    closeFlyout();
-                });
-
-                // Set src after adding event listeners with cache busting
-                img.src = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
-                imageGrid.appendChild(img);
+                const thumbUrl = image.thumbnailUrl + (image.thumbnailUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                const thumb = createMemeThumb(image.url, thumbUrl, 'michi.meme', favorites);
+                imageGrid.appendChild(thumb);
             });
         }
         hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
