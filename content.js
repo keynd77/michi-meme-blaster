@@ -7,7 +7,9 @@ let flyoutContainer = null;
 let flyoutToolbar = null;
 let likeReplacementEnabled = true;
 let soundEnabled = false;
-let quickFireAutoPost = false;
+let quickFireEnabled = true;
+let quickFireAutoPost = true;
+let quickFireText = "gmichi";
 const TEXT_TO_ADD = "gmichi";
 let currentSearchPage = 1;
 let currentSearchQuery = "";
@@ -284,10 +286,12 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
 }
 
 // Load initial state from storage
-chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireAutoPost"], (data) => {
+chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireEnabled", "quickFireAutoPost", "quickFireText"], (data) => {
     likeReplacementEnabled = data.replaceLikeEnabled ?? true;
     soundEnabled = data.soundEnabled ?? false;
-    quickFireAutoPost = data.quickFireAutoPost ?? false; // Load sound setting
+    quickFireEnabled = data.quickFireEnabled ?? false;
+    quickFireAutoPost = data.quickFireAutoPost ?? true;
+    quickFireText = data.quickFireText || "gmichi";
 
     if (likeReplacementEnabled) {
         replaceLikeButtons();
@@ -309,8 +313,17 @@ chrome.runtime.onMessage.addListener((message) => {
         soundEnabled = message.soundEnabled; // Update sound setting when changed
     }
 
+    if (message.quickFireEnabled !== undefined) {
+        quickFireEnabled = message.quickFireEnabled;
+        document.querySelectorAll('.gmichi-quickfire-wrapper').forEach(el => {
+            el.style.display = message.quickFireEnabled ? "" : "none";
+        });
+    }
     if (message.quickFireAutoPost !== undefined) {
         quickFireAutoPost = message.quickFireAutoPost;
+    }
+    if (message.quickFireText !== undefined) {
+        quickFireText = message.quickFireText;
     }
 });
 
@@ -323,9 +336,6 @@ function findAddPhotoButtons() {
 
 // Function to create Michi button
 function createMichiButton() {
-    const buttonWrapper = document.createElement("div");
-    buttonWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6"; // Matches Twitter's button container
-
     const button = document.createElement("button");
     button.setAttribute("role", "button");
     button.setAttribute("aria-label", "Michi Button");
@@ -369,14 +379,10 @@ function createMichiButton() {
     });
 
     button.appendChild(buttonInner);
-    buttonWrapper.appendChild(button);
-    return buttonWrapper;
+    return button;
 }
 
 function createQuickFireButton() {
-    const buttonWrapper = document.createElement("div");
-    buttonWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6";
-
     const button = document.createElement("button");
     button.setAttribute("role", "button");
     button.setAttribute("aria-label", "Quick Fire Michi");
@@ -393,9 +399,9 @@ function createQuickFireButton() {
     buttonInner.style.position = "relative";
 
     buttonInner.innerHTML = `
-        <div style="position: relative; display: inline-block;">
+        <div style="position: relative; display: inline-flex; align-items: center; justify-content: center;">
             ${michiSVGBase("#FFD700")}
-            <span style="position: absolute; bottom: -2px; right: -4px; font-size: 12px; line-height: 1;">&#9889;</span>
+            <span style="position: absolute; bottom: 0px; right: -6px; font-size: 10px; line-height: 1; pointer-events: none;">&#9889;</span>
         </div>
     `;
 
@@ -416,6 +422,14 @@ function createQuickFireButton() {
         }
 
         showLoadingOverlay();
+
+        if (event.shiftKey) {
+            insertTextInTweetInput("check out michi\n\n$MICHI\nCA: AywAYdNJnSLSXwKWYxDciPjqGRnwp4iZdQptuuQTpump ");
+        } else {
+            insertTextInTweetInput(quickFireText + " ");
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 300));
         const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
         await uploadImageToTweet(randomImage);
 
@@ -431,8 +445,7 @@ function createQuickFireButton() {
     });
 
     button.appendChild(buttonInner);
-    buttonWrapper.appendChild(button);
-    return buttonWrapper;
+    return button;
 }
 
 async function handleShiftClickMichiButton() {
@@ -650,6 +663,12 @@ function openMichiFlyout(event, button) {
                         if (toggle.checked) replaceLikeButtons();
                         else restoreOriginalLikeButtons();
                     }
+                    if (key === 'quickFireEnabled') {
+                        quickFireEnabled = toggle.checked;
+                        document.querySelectorAll('.gmichi-quickfire-wrapper').forEach(el => {
+                            el.style.display = toggle.checked ? "" : "none";
+                        });
+                    }
                     if (key === 'quickFireAutoPost') quickFireAutoPost = toggle.checked;
                 });
 
@@ -658,9 +677,36 @@ function openMichiFlyout(event, button) {
                 return row;
             };
 
+            panel.appendChild(makeToggle("Show Quick Fire Button", "quickFireEnabled", quickFireEnabled));
             panel.appendChild(makeToggle("Quick Fire: Auto-post", "quickFireAutoPost", quickFireAutoPost));
+
+            const textRow = document.createElement("div");
+            textRow.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgb(47, 51, 54);";
+            const textLabel = document.createElement("span");
+            textLabel.textContent = "Quick Fire Text";
+            const textInput = document.createElement("input");
+            textInput.type = "text";
+            textInput.value = quickFireText;
+            textInput.style.cssText = `
+                width: 120px; padding: 4px 8px; border: 1px solid rgb(47, 51, 54); border-radius: 4px;
+                background: ${getComputedStyle(document.body).backgroundColor}; color: ${getComputedStyle(document.body).color};
+                font-size: 13px; outline: none;
+            `;
+            textInput.addEventListener("input", () => {
+                quickFireText = textInput.value;
+                chrome.storage.sync.set({ quickFireText: textInput.value });
+            });
+            textRow.appendChild(textLabel);
+            textRow.appendChild(textInput);
+            panel.appendChild(textRow);
+
             panel.appendChild(makeToggle("Sound Effects", "soundEnabled", soundEnabled));
             panel.appendChild(makeToggle("Michi Mode (replace hearts)", "replaceLikeEnabled", likeReplacementEnabled));
+
+            const hint = document.createElement("div");
+            hint.style.cssText = "padding: 12px 0 4px; font-size: 12px; color: rgb(113, 118, 123); line-height: 1.4;";
+            hint.innerHTML = "<b>Tip:</b> Shift+click the quick fire button to add ticker info ($MICHI + CA)";
+            panel.appendChild(hint);
 
             imageGrid.parentNode.insertBefore(panel, imageGrid);
         }
@@ -810,18 +856,14 @@ async function loadMichiImages(mode, reset = false) {
     });
 }
 
-async function uploadImageToTweet(imageUrl, imageSource = 'admin.gmichi.meme') {
+async function uploadImageToTweet(imageUrl) {
     try {
         showLoadingOverlay();
 
-        // Configure fetch options based on image source
-        const fetchOptions = imageSource === 'michi.meme'
-            ? { method: 'GET', mode: 'cors', credentials: 'omit', headers: { 'Cache-Control': 'no-cache' } }
-            : { method: 'GET' };
-
-        const response = await fetch(imageUrl, fetchOptions);
-        if (!response.ok) throw new Error("Failed to fetch media");
-        const blob = await response.blob();
+        // Fetch via background service worker to bypass CORS
+        const result = await chrome.runtime.sendMessage({ type: 'fetchImage', url: imageUrl });
+        if (!result || !result.success) throw new Error(result?.error || "Failed to fetch media");
+        const blob = new Blob([new Uint8Array(result.data)]);
 
         // Determine file extension and MIME type based on URL
         const isVideo = isVideoUrl(imageUrl);
@@ -1018,43 +1060,39 @@ function addMichiButtonToAllToolbars() {
             const toolbar = photoButton.closest('[data-testid="ScrollSnap-List"]');
             if (!toolbar) return; // Skip if no toolbar is found
 
-            // Ensure Michi button is only added once
+            // Ensure Michi buttons are only added once
             if (!toolbar.querySelector('.gmichi-toolbar-button-wrapper')) {
                 const michiWrapper = document.createElement("div");
-                michiWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-toolbar-button-wrapper"; // Match other button wrappers
+                michiWrapper.setAttribute("role", "presentation");
+                michiWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-toolbar-button-wrapper";
+                michiWrapper.appendChild(createMichiButton());
 
-                const michiButton = createMichiButton();
-                michiWrapper.appendChild(michiButton);
+                const quickFireWrapper = document.createElement("div");
+                quickFireWrapper.setAttribute("role", "presentation");
+                quickFireWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-quickfire-wrapper";
+                quickFireWrapper.appendChild(createQuickFireButton());
+                quickFireWrapper.style.display = quickFireEnabled ? "" : "none";
 
-                // Insert at the **start** of the toolbar
+                toolbar.insertBefore(quickFireWrapper, toolbar.firstChild);
                 toolbar.insertBefore(michiWrapper, toolbar.firstChild);
-
-                // Add quick fire button
-                if (!toolbar.querySelector('.gmichi-quickfire-wrapper')) {
-                    const quickFireWrapper = document.createElement("div");
-                    quickFireWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-quickfire-wrapper";
-                    quickFireWrapper.appendChild(createQuickFireButton());
-                    toolbar.insertBefore(quickFireWrapper, michiWrapper.nextSibling);
-                }
             }
         });
     } else {
         document.querySelectorAll('[data-testid="ScrollSnap-List"]').forEach(toolbar => {
             if (!toolbar.querySelector(".gmichi-toolbar-button-wrapper")) {
                 const michiWrapper = document.createElement("div");
-                michiWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-toolbar-button-wrapper"; // Consistent styling
+                michiWrapper.setAttribute("role", "presentation");
+                michiWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-toolbar-button-wrapper";
                 michiWrapper.appendChild(createMichiButton());
 
-                // Insert at the **beginning** instead of the end
-                toolbar.insertBefore(michiWrapper, toolbar.firstChild);
+                const quickFireWrapper = document.createElement("div");
+                quickFireWrapper.setAttribute("role", "presentation");
+                quickFireWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-quickfire-wrapper";
+                quickFireWrapper.appendChild(createQuickFireButton());
+                quickFireWrapper.style.display = quickFireEnabled ? "" : "none";
 
-                // Add quick fire button
-                if (!toolbar.querySelector('.gmichi-quickfire-wrapper')) {
-                    const quickFireWrapper = document.createElement("div");
-                    quickFireWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-quickfire-wrapper";
-                    quickFireWrapper.appendChild(createQuickFireButton());
-                    toolbar.insertBefore(quickFireWrapper, michiWrapper.nextSibling);
-                }
+                toolbar.insertBefore(quickFireWrapper, toolbar.firstChild);
+                toolbar.insertBefore(michiWrapper, toolbar.firstChild);
             }
         });
     }
