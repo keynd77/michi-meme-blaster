@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Michi Meme Blaster",
-    "version": "2.1.1",
+    "version": "2.2.0",
     "description": "Michi meme assistant for Twitter—bullpost $michi fast and easy!",
     "permissions": [
         "activeTab",
@@ -11,7 +11,7 @@
         "https://twitter.com/*",
         "https://x.com/*",
         "https://michi-meme-search.vercel.app/*",
-        "https://michi.sbs/*"
+        "https://michi.meme/*"
     ],
     "content_scripts": [
         {

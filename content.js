@@ -1,5 +1,5 @@
 // Global variables
-const version = "2.1";
+const version = "2.2";
 let michiImages = [];
 let loadedCount = 0;
 const batchSize = 20;
