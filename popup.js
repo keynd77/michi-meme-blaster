@@ -1,240 +1,141 @@
-const container = document.getElementById("imageContainer");
-const allBtn = document.getElementById("allBtn");
-const randomBtn = document.getElementById("randomBtn");
-const favBtn = document.getElementById("favBtn");
-const searchInput = document.getElementById("searchInput");
-const darkModeToggle = document.getElementById("darkModeToggle");
-const batchSize = 20;
-let images = [];
-let loadedCount = 0;
-let currentMode = "all";
-let isSearching = false;
-let searchTimeout = null;
-let currentSearchPage = 1;
-let currentSearchQuery = "";
-let hasMoreSearchResults = true;
+const CA = "AywAYdNJnSLSXwKWYxDciPjqGRnwp4iZdQptuuQTpump";
 
-fetch("images.json")
-    .then(response => response.json())
-    .then(data => {
-        images = data;
-        loadAllImages();
-    })
-    .catch(error => console.error("Error loading images:", error));
+document.addEventListener("DOMContentLoaded", async () => {
+    // --- Load & display stats ---
+    const stats = await getStats();
+    const today = getTodayISO();
 
-function loadAllImages() {
-    container.innerHTML = "";
-    loadedCount = 0;
-    loadNextBatch();
-}
+    document.getElementById("totalCount").textContent = stats.memeCount;
+    document.getElementById("todayCount").textContent = stats.dailyLog[today] || 0;
+    document.getElementById("currentStreak").textContent = stats.currentStreak;
+    document.getElementById("longestStreak").textContent = stats.longestStreak;
 
-function loadNextBatch() {
-    if (currentMode !== "all") return;
-    const batch = images.slice(loadedCount, loadedCount + batchSize);
-    batch.forEach(url => addImage(url));
-    loadedCount += batch.length;
-}
+    // Progress bar
+    const nextMilestone = getNextMilestone(stats.memeCount);
+    const prevMilestone = MILESTONES.filter(m => m <= stats.memeCount).pop() || 0;
 
-function loadRandomImages() {
-    container.innerHTML = "";
-    let shuffled = [...images].sort(() => 0.5 - Math.random());
-    let selected = shuffled.slice(0, 4);
-    selected.forEach(url => addImage(url));
-}
-
-async function loadFavorites() {
-    container.innerHTML = "";
-    const favorites = await getFavorites();
-    if (favorites.length === 0) {
-        showError("No favorites yet. Star memes to save them here.");
-        return;
-    }
-    favorites.forEach(url => addImage(url));
-}
-
-function addImage(url) {
-    const img = document.createElement("img");
-    img.src = url;
-    img.loading = "lazy";
-    container.appendChild(img);
-}
-
-// searchImages function is now imported from utils.js
-
-function showError(message) {
-    container.innerHTML = `<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; padding: 20px; color: var(--text-color); width: 100%;">${message}</div>`;
-}
-
-function showLoading() {
-    container.innerHTML = `<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; padding: 20px; color: var(--text-color); width: 100%;">
-        <div class="loading-spinner"></div>
-        <div style="margin-top: 10px;">Searching...</div>
-    </div>`;
-}
-
-function showSearchResults(results, query) {
-    container.innerHTML = "";
-    if (results.length > 0) {
-        results.forEach(image => addImage(image.thumbnailUrl));
-    }
-}
-
-function clearSearch() {
-    searchInput.value = "";
-    currentMode = "all";
-    currentSearchPage = 1;
-    currentSearchQuery = "";
-    hasMoreSearchResults = true;
-    loadAllImages();
-}
-
-window.addEventListener("scroll", async () => {
-    if (currentMode === "all" && window.innerHeight + window.scrollY >= document.body.scrollHeight - 50) {
-        loadNextBatch();
-    }
-    // Infinite scrolling for search results
-    else if (currentMode === "search" && !isSearching && hasMoreSearchResults &&
-        window.innerHeight + window.scrollY >= document.body.scrollHeight - 50) {
-
-        isSearching = true;
-        currentSearchPage++;
-
-        const result = await searchImages(currentSearchQuery, currentSearchPage);
-
-        if (result.images.length > 0) {
-            result.images.forEach(image => addImage(image.thumbnailUrl));
-            hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
-        } else {
-            hasMoreSearchResults = false;
-        }
-
-        isSearching = false;
-    }
-});
-
-// Real-time search as user types
-searchInput.addEventListener("input", (e) => {
-    const query = e.target.value.trim();
-
-    // Clear previous timeout
-    if (searchTimeout) {
-        clearTimeout(searchTimeout);
+    if (nextMilestone) {
+        const progress = ((stats.memeCount - prevMilestone) / (nextMilestone - prevMilestone)) * 100;
+        const nextBadge = BADGE_DEFINITIONS.find(b => b.id === `meme_${nextMilestone}`) || BADGE_DEFINITIONS[0];
+        document.getElementById("progressText").textContent = `${stats.memeCount}/${nextMilestone}`;
+        document.getElementById("progressBadge").textContent = nextBadge.name;
+        document.getElementById("progressFill").style.width = `${progress}%`;
+    } else {
+        document.getElementById("progressSection").style.display = "none";
     }
 
-    // Set new timeout for debounced search
-    searchTimeout = setTimeout(async () => {
-        if (query.length >= 2) { // Only search if query is 2+ characters
-            currentMode = "search";
-            isSearching = true;
-            showLoading();
+    // Badge grid with click-to-reveal detail
+    const grid = document.getElementById("badgeGrid");
+    const detail = document.getElementById("badgeDetail");
+    const detailName = document.getElementById("badgeDetailName");
+    const detailDesc = document.getElementById("badgeDetailDesc");
+    const detailStatus = document.getElementById("badgeDetailStatus");
+    let selectedBadgeEl = null;
 
-            // Reset search state for new query
-            currentSearchPage = 1;
-            currentSearchQuery = query;
-            hasMoreSearchResults = true;
-
-            const result = await searchImages(query, 1);
-
-            if (result.images.length === 0) {
-                showError("No results found. Try a different search term.");
-            } else {
-                showSearchResults(result.images, query);
-                hasMoreSearchResults = result.pagination ? result.pagination.hasNext : false;
+    BADGE_DEFINITIONS.forEach(badge => {
+        const earned = stats.badges.includes(badge.id);
+        const el = document.createElement("div");
+        el.className = `badge ${earned ? 'earned' : 'unearned'}`;
+        el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="${earned ? '#1a1a1a' : '#555'}"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+        el.addEventListener("click", () => {
+            // Toggle off if clicking same badge
+            if (selectedBadgeEl === el) {
+                el.classList.remove("selected");
+                detail.classList.remove("visible");
+                selectedBadgeEl = null;
+                return;
             }
+            // Deselect previous
+            if (selectedBadgeEl) selectedBadgeEl.classList.remove("selected");
+            el.classList.add("selected");
+            selectedBadgeEl = el;
 
-            isSearching = false;
-        } else if (query.length === 0) {
-            // Clear search and show all images
-            clearSearch();
-        }
-    }, 300); // 300ms delay for responsive feel
-});
+            detailName.textContent = badge.name;
+            detailName.style.color = earned ? '#FFD700' : '#e7e9ea';
+            detailDesc.textContent = badge.desc;
+            detailStatus.textContent = earned ? 'Unlocked!' : 'Locked';
+            detailStatus.style.color = earned ? '#4ade80' : '#71767b';
+            detail.classList.add("visible");
+        });
+        grid.appendChild(el);
+    });
 
-// Clear search when switching to All or Random
-allBtn.addEventListener("click", () => {
-    clearSearch();
-    currentMode = "all";
-    loadAllImages();
-});
+    // --- CA copy ---
+    document.getElementById("caRow").addEventListener("click", () => {
+        navigator.clipboard.writeText(CA).then(() => {
+            const label = document.getElementById("copiedLabel");
+            label.style.display = "inline";
+            setTimeout(() => { label.style.display = "none"; }, 1500);
+        });
+    });
 
-randomBtn.addEventListener("click", () => {
-    clearSearch();
-    currentMode = "random";
-    loadRandomImages();
-});
-
-favBtn.addEventListener("click", () => {
-    clearSearch();
-    currentMode = "favorites";
-    loadFavorites();
-});
-
-const enableDarkMode = () => {
-    document.documentElement.setAttribute("data-theme", "dark");
-    localStorage.setItem("theme", "dark");
-};
-
-const disableDarkMode = () => {
-    document.documentElement.setAttribute("data-theme", "light");
-    localStorage.setItem("theme", "light");
-};
-
-const savedTheme = localStorage.getItem("theme");
-if (savedTheme === "dark") {
-    enableDarkMode();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    const toggleLikeReplace = document.getElementById("toggleLikeReplace");
+    // --- Settings ---
+    const toggleMichiMode = document.getElementById("toggleMichiMode");
     const toggleSound = document.getElementById("toggleSound");
+    const toggleQuickFireBtn = document.getElementById("toggleQuickFireBtn");
+    const toggleQuickFireAuto = document.getElementById("toggleQuickFireAuto");
+    const quickFireTextInput = document.getElementById("quickFireTextInput");
+    const toggleSidebarStats = document.getElementById("toggleSidebarStats");
 
-    // Load stored toggle states
-    chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled"], (data) => {
-        toggleLikeReplace.checked = data.replaceLikeEnabled ?? true; // Default: Enabled
-        toggleSound.checked = data.soundEnabled ?? false; // Default: Disabled
+    // Load stored settings
+    chrome.storage.sync.get([
+        "replaceLikeEnabled", "soundEnabled", "quickFireEnabled",
+        "quickFireAutoPost", "quickFireText", "sidebarStatsEnabled"
+    ], (data) => {
+        toggleMichiMode.checked = data.replaceLikeEnabled ?? true;
+        toggleSound.checked = data.soundEnabled ?? false;
+        toggleQuickFireBtn.checked = data.quickFireEnabled ?? true;
+        toggleQuickFireAuto.checked = data.quickFireAutoPost ?? false;
+        quickFireTextInput.value = data.quickFireText || "gmichi";
+        toggleSidebarStats.checked = data.sidebarStatsEnabled ?? true;
     });
 
-    // Listen for "Replace Like" toggle changes
-    toggleLikeReplace.addEventListener("change", () => {
-        const enabled = toggleLikeReplace.checked;
+    // Setting change handlers
+    function sendToContentScript(msg) {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                chrome.tabs.sendMessage(tabs[0].id, msg);
+            }
+        });
+    }
+
+    toggleMichiMode.addEventListener("change", () => {
+        const enabled = toggleMichiMode.checked;
         chrome.storage.sync.set({ replaceLikeEnabled: enabled });
-
-        // Send message to content script
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, { replaceLikeEnabled: enabled });
-            }
-        });
+        sendToContentScript({ replaceLikeEnabled: enabled });
     });
 
-    // Listen for "Enable Sound" toggle changes
     toggleSound.addEventListener("change", () => {
-        const soundEnabled = toggleSound.checked;
-        chrome.storage.sync.set({ soundEnabled });
-
-        // Send message to content script
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, { soundEnabled });
-            }
-        });
+        const enabled = toggleSound.checked;
+        chrome.storage.sync.set({ soundEnabled: enabled });
+        sendToContentScript({ soundEnabled: enabled });
     });
 
-    const toggleQuickFire = document.getElementById("toggleQuickFire");
-
-    chrome.storage.sync.get(["quickFireAutoPost"], (data) => {
-        toggleQuickFire.checked = data.quickFireAutoPost ?? false;
+    toggleQuickFireBtn.addEventListener("change", () => {
+        const enabled = toggleQuickFireBtn.checked;
+        chrome.storage.sync.set({ quickFireEnabled: enabled });
+        sendToContentScript({ quickFireEnabled: enabled });
     });
 
-    toggleQuickFire.addEventListener("change", () => {
-        const enabled = toggleQuickFire.checked;
+    toggleQuickFireAuto.addEventListener("change", () => {
+        const enabled = toggleQuickFireAuto.checked;
         chrome.storage.sync.set({ quickFireAutoPost: enabled });
+        sendToContentScript({ quickFireAutoPost: enabled });
+    });
 
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, { quickFireAutoPost: enabled });
-            }
-        });
+    let textTimeout = null;
+    quickFireTextInput.addEventListener("input", () => {
+        if (textTimeout) clearTimeout(textTimeout);
+        textTimeout = setTimeout(() => {
+            const text = quickFireTextInput.value;
+            chrome.storage.sync.set({ quickFireText: text });
+            sendToContentScript({ quickFireText: text });
+        }, 300);
+    });
+
+    toggleSidebarStats.addEventListener("change", () => {
+        const enabled = toggleSidebarStats.checked;
+        chrome.storage.sync.set({ sidebarStatsEnabled: enabled });
+        sendToContentScript({ sidebarStatsEnabled: enabled });
     });
 });
-

@@ -1,5 +1,5 @@
 // Global variables
-const version = "2.2";
+const version = "2.3";
 let michiImages = [];
 let loadedCount = 0;
 const batchSize = 20;
@@ -11,6 +11,7 @@ let quickFireEnabled = true;
 let quickFireAutoPost = true;
 let quickFireText = "gmichi";
 const TEXT_TO_ADD = "gmichi";
+let sidebarCardInjected = false;
 let currentSearchPage = 1;
 let currentSearchQuery = "";
 let hasMoreSearchResults = true;
@@ -325,6 +326,17 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.quickFireText !== undefined) {
         quickFireText = message.quickFireText;
     }
+
+    if (message.sidebarStatsEnabled !== undefined) {
+        if (!message.sidebarStatsEnabled) {
+            const card = document.querySelector('.michi-sidebar-card');
+            if (card) card.remove();
+            sidebarCardInjected = false;
+        } else {
+            sidebarCardInjected = false;
+            injectSidebarCard();
+        }
+    }
 });
 
 // Function to try and find the image button by aria-label in different languages
@@ -431,7 +443,7 @@ function createQuickFireButton() {
 
         await new Promise(resolve => setTimeout(resolve, 300));
         const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-        await uploadImageToTweet(randomImage);
+        await uploadImageToTweet(randomImage, event.shiftKey ? 'shift_shiller' : 'first_quickfire');
 
         if (quickFireAutoPost) {
             await new Promise(resolve => setTimeout(resolve, 800));
@@ -856,7 +868,7 @@ async function loadMichiImages(mode, reset = false) {
     });
 }
 
-async function uploadImageToTweet(imageUrl) {
+async function uploadImageToTweet(imageUrl, specialBadgeId) {
     try {
         showLoadingOverlay();
 
@@ -915,6 +927,11 @@ async function uploadImageToTweet(imageUrl) {
         if (soundEnabled) {
             playMichiSound();
         }
+
+        // Track meme count & check badges
+        const { newBadges } = await incrementMemeCount(specialBadgeId);
+        newBadges.forEach(b => showBadgeToast(b));
+        updateSidebarCard();
 
     } catch (error) {
         console.error("Error uploading media:", error);
@@ -1183,6 +1200,11 @@ function addQuickFireToTweetActions() {
                 fileInput.dispatchEvent(new Event("change", { bubbles: true }));
             }
 
+            // Track meme count & check badges
+            const { newBadges } = await incrementMemeCount(e.shiftKey ? 'shift_shiller' : 'first_quickfire');
+            newBadges.forEach(b => showBadgeToast(b));
+            updateSidebarCard();
+
             if (quickFireAutoPost) {
                 await new Promise(r => setTimeout(r, 1000));
                 const postBtn = document.querySelector('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
@@ -1252,11 +1274,246 @@ setTimeout(() => {
 }, 100);
 
 
+// --- Toast Notifications ---
+
+function showBadgeToast(badge) {
+    const toast = document.createElement("div");
+    toast.style.cssText = `
+        position: fixed; bottom: 20px; right: 20px; z-index: 100000;
+        background: #1a1a1a; border: 1px solid #333; border-radius: 12px;
+        padding: 14px 18px; min-width: 260px; max-width: 320px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5); color: #FAECCF;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        animation: michiToastIn 0.3s ease; cursor: pointer;
+    `;
+
+    // Stack multiple toasts
+    const existing = document.querySelectorAll('.michi-badge-toast');
+    toast.style.bottom = `${20 + existing.length * 90}px`;
+    toast.className = 'michi-badge-toast';
+
+    toast.innerHTML = `
+        <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">Achievement Unlocked!</div>
+        <div style="font-size: 16px; font-weight: bold; color: #FFD700;">🏆 ${badge.name}</div>
+        <button class="michi-toast-share" style="
+            margin-top: 8px; padding: 4px 12px; background: #FAECCF; color: #1a1a1a;
+            border: none; border-radius: 6px; font-size: 12px; font-weight: bold;
+            cursor: pointer;
+        ">Share</button>
+    `;
+
+    // Add animation keyframes if not already added
+    if (!document.getElementById('michi-toast-styles')) {
+        const style = document.createElement('style');
+        style.id = 'michi-toast-styles';
+        style.textContent = `
+            @keyframes michiToastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+            @keyframes michiToastOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        `;
+        document.head.appendChild(style);
+    }
+
+    const shareBtn = toast.querySelector('.michi-toast-share');
+    shareBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        getStats().then(stats => {
+            const tweetText = `I just earned the ${badge.name} badge on Michi Meme Blaster! ${stats.memeCount} memes posted. gmichi @maboroshitoken`;
+            window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`, '_blank');
+        });
+    });
+
+    toast.addEventListener('click', () => dismissToast(toast));
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => dismissToast(toast), 5000);
+}
+
+function dismissToast(toast) {
+    if (!toast.parentNode) return;
+    toast.style.animation = 'michiToastOut 0.3s ease forwards';
+    setTimeout(() => toast.remove(), 300);
+}
+
+// --- Sidebar Stats Card ---
+
+async function injectSidebarCard() {
+    if (sidebarCardInjected) return;
+
+    const stats = await getStats();
+    if (!stats.sidebarStatsEnabled) return;
+
+    const sidebar = document.querySelector('div[data-testid="sidebarColumn"]');
+    if (!sidebar) return;
+
+    // Don't inject twice
+    if (sidebar.querySelector('.michi-sidebar-card')) return;
+
+    // Find a native card (aside or section) inside the sidebar
+    const firstAside = sidebar.querySelector('aside[aria-label], section[aria-label]');
+    if (!firstAside) return;
+
+    // Walk up from the aside to find the container div that holds all sidebar cards as siblings
+    // The aside sits inside wrapper divs. We need the ancestor whose parent contains multiple card wrappers.
+    let cardWrapper = firstAside;
+    while (cardWrapper.parentElement && cardWrapper.parentElement !== sidebar) {
+        const siblings = cardWrapper.parentElement.children;
+        // If this level has multiple siblings, we found the card container level
+        if (siblings.length > 1) break;
+        cardWrapper = cardWrapper.parentElement;
+    }
+
+    const parent = cardWrapper.parentElement;
+    if (!parent) return;
+
+    const card = document.createElement("div");
+    card.className = "michi-sidebar-card";
+    card.style.cssText = `
+        align-items: stretch; background-color: rgb(22, 24, 28);
+        border: 1px solid rgb(47, 51, 54); border-radius: 16px;
+        box-sizing: border-box; display: flex; flex-direction: column;
+        flex-shrink: 0; margin: 0 0 16px; padding: 0; overflow: hidden;
+        min-height: 0; min-width: 0; position: relative; z-index: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #e7e9ea;
+    `;
+
+    renderSidebarCard(card, stats);
+    parent.insertBefore(card, cardWrapper);
+
+    sidebarCardInjected = true;
+}
+
+function renderSidebarCard(card, stats) {
+    const nextMilestone = getNextMilestone(stats.memeCount);
+    const prevMilestone = MILESTONES.filter(m => m <= stats.memeCount).pop() || 0;
+    const progress = nextMilestone ? ((stats.memeCount - prevMilestone) / (nextMilestone - prevMilestone)) * 100 : 100;
+    const nextBadge = nextMilestone ? BADGE_DEFINITIONS.find(b => b.id === `meme_${nextMilestone}`) || BADGE_DEFINITIONS.find(b => b.id === 'first_meme') : null;
+    const todayCount = stats.dailyLog[getTodayISO()] || 0;
+
+    const collapsed = stats.sidebarCardCollapsed;
+
+    const badgeStar = (fill) => `<svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+
+    card.innerHTML = `
+        <div class="michi-sidebar-header" style="
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 12px; cursor: pointer; user-select: none;
+        ">
+            <div style="display: flex; align-items: center; gap: 6px;">
+                ${michiSVGBase('#FAECCF')}
+                <span style="font-weight: 700; font-size: 13px;">Michi Blaster Stats</span>
+            </div>
+            <span class="michi-sidebar-chevron" style="font-size: 14px; color: #71767b; transition: transform 0.2s;">${collapsed ? '▸' : '▾'}</span>
+        </div>
+        <div class="michi-sidebar-body" style="
+            padding: ${collapsed ? '0' : '0 12px 12px'};
+            max-height: ${collapsed ? '0' : '500px'};
+            overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease;
+        ">
+            <div style="text-align: center; margin-bottom: 8px;">
+                <div style="font-size: 28px; font-weight: 800; color: #FAECCF;">${stats.memeCount}</div>
+                <div style="font-size: 11px; color: #71767b;">memes posted</div>
+            </div>
+            <div style="display: flex; justify-content: space-around; margin-bottom: 8px; text-align: center;">
+                <div>
+                    <div style="font-size: 16px; font-weight: 700;">${todayCount}</div>
+                    <div style="font-size: 10px; color: #71767b;">Today</div>
+                </div>
+                <div>
+                    <div style="font-size: 16px; font-weight: 700;">${stats.currentStreak}</div>
+                    <div style="font-size: 10px; color: #71767b;">Streak</div>
+                </div>
+                <div>
+                    <div style="font-size: 16px; font-weight: 700;">${stats.longestStreak}</div>
+                    <div style="font-size: 10px; color: #71767b;">Best</div>
+                </div>
+            </div>
+            ${nextMilestone ? `
+            <div style="margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #71767b; margin-bottom: 3px;">
+                    <span>${stats.memeCount}/${nextMilestone}</span>
+                    <span>${nextBadge ? nextBadge.name : ''}</span>
+                </div>
+                <div style="background: #2f3336; border-radius: 3px; height: 4px; overflow: hidden;">
+                    <div style="background: #FAECCF; height: 100%; width: ${progress}%; border-radius: 3px; transition: width 0.3s;"></div>
+                </div>
+            </div>` : ''}
+            <div class="michi-badge-row" style="display: flex; flex-wrap: wrap; gap: 4px;">
+                ${BADGE_DEFINITIONS.map((b, i) => {
+                    const earned = stats.badges.includes(b.id);
+                    return `<div data-badge-idx="${i}" style="
+                        width: 22px; height: 22px; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center;
+                        background: ${earned ? '#FFD700' : '#2f3336'}; cursor: pointer;
+                        transition: transform 0.15s, box-shadow 0.15s;
+                    ">${badgeStar(earned ? '#1a1a1a' : '#555')}</div>`;
+                }).join('')}
+            </div>
+            <div class="michi-badge-detail" style="display: none; background: #1a1a1a; border: 1px solid #2f3336; border-radius: 6px; padding: 8px 10px; margin-top: 6px;"></div>
+        </div>
+    `;
+
+    // Toggle collapse
+    const header = card.querySelector('.michi-sidebar-header');
+    header.addEventListener('click', async () => {
+        const newState = !stats.sidebarCardCollapsed;
+        stats.sidebarCardCollapsed = newState;
+        chrome.storage.sync.set({ sidebarCardCollapsed: newState });
+        renderSidebarCard(card, stats);
+    });
+
+    // Badge click-to-explain
+    const badgeDetail = card.querySelector('.michi-badge-detail');
+    let selectedSidebarBadge = null;
+    card.querySelectorAll('[data-badge-idx]').forEach(el => {
+        el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.2)'; });
+        el.addEventListener('mouseleave', () => { el.style.transform = selectedSidebarBadge === el ? 'scale(1.2)' : 'scale(1)'; });
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(el.dataset.badgeIdx);
+            const badge = BADGE_DEFINITIONS[idx];
+            const earned = stats.badges.includes(badge.id);
+
+            if (selectedSidebarBadge === el) {
+                badgeDetail.style.display = 'none';
+                el.style.boxShadow = 'none';
+                el.style.transform = 'scale(1)';
+                selectedSidebarBadge = null;
+                return;
+            }
+            if (selectedSidebarBadge) {
+                selectedSidebarBadge.style.boxShadow = 'none';
+                selectedSidebarBadge.style.transform = 'scale(1)';
+            }
+            selectedSidebarBadge = el;
+            el.style.boxShadow = '0 0 0 2px #FAECCF';
+            el.style.transform = 'scale(1.2)';
+            badgeDetail.style.display = 'block';
+            badgeDetail.innerHTML = `
+                <div style="font-size: 12px; font-weight: 700; color: ${earned ? '#FFD700' : '#e7e9ea'};">${badge.name}</div>
+                <div style="font-size: 11px; color: #71767b;">${badge.desc}</div>
+                <div style="font-size: 10px; margin-top: 3px; font-weight: 600; color: ${earned ? '#4ade80' : '#71767b'};">${earned ? 'Unlocked!' : 'Locked'}</div>
+            `;
+        });
+    });
+}
+
+async function updateSidebarCard() {
+    const card = document.querySelector('.michi-sidebar-card');
+    if (!card) return;
+    const stats = await getStats();
+    renderSidebarCard(card, stats);
+}
+
+// --- Initialize ---
+
 // Run on page load and observe for changes
 addMichiButtonToAllToolbars();
 addQuickFireToTweetActions();
 replaceProfilePics();
 replaceLikeButtons();
+injectSidebarCard();
 
 const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
@@ -1264,6 +1521,9 @@ const observer = new MutationObserver(() => {
     replaceProfilePics();
     if (likeReplacementEnabled) {
         replaceLikeButtons();
+    }
+    if (!sidebarCardInjected) {
+        injectSidebarCard();
     }
 });
 
