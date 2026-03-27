@@ -4,10 +4,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         fetch(message.url, { method: 'GET' })
             .then(response => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                return response.arrayBuffer();
+                const contentType = response.headers.get('Content-Type') || '';
+                return response.arrayBuffer().then(buffer => ({ buffer, contentType }));
             })
-            .then(buffer => {
-                sendResponse({ success: true, data: Array.from(new Uint8Array(buffer)) });
+            .then(({ buffer, contentType }) => {
+                sendResponse({ success: true, data: Array.from(new Uint8Array(buffer)), contentType });
             })
             .catch(error => {
                 sendResponse({ success: false, error: error.message });
