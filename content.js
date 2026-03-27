@@ -1100,26 +1100,16 @@ function addMichiButtonToAllToolbars() {
 
 // Add quick fire michi button to tweet action bars (next to reply)
 function addQuickFireToTweetActions() {
-    if (!quickFireEnabled) {
-        console.log('[michi] quickFireEnabled is false, skipping tweet actions');
-        return;
-    }
+    if (!quickFireEnabled) return;
 
-    const tweets = document.querySelectorAll('article[data-testid="tweet"]');
-    console.log(`[michi] Found ${tweets.length} tweets, quickFireEnabled=${quickFireEnabled}`);
-
-    tweets.forEach((tweet, i) => {
+    document.querySelectorAll('article[data-testid="tweet"]').forEach(tweet => {
         if (tweet.querySelector('.gmichi-tweet-quickfire')) return;
 
         const replyBtn = tweet.querySelector('button[data-testid="reply"]');
-        if (!replyBtn) {
-            console.log(`[michi] Tweet ${i}: no reply button found`);
-            return;
-        }
+        if (!replyBtn) return;
 
         const replyWrapper = replyBtn.parentElement;
-        const actionGroup = replyWrapper ? replyWrapper.parentElement : null;
-        console.log(`[michi] Tweet ${i}: replyBtn found, wrapper=${!!replyWrapper}, group=${!!actionGroup}, groupRole=${actionGroup?.getAttribute('role')}`);
+        if (!replyWrapper || !replyWrapper.parentElement) return;
 
         const michiWrapper = document.createElement("div");
         michiWrapper.className = "gmichi-tweet-quickfire";
