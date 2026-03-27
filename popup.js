@@ -1,6 +1,7 @@
 const container = document.getElementById("imageContainer");
 const allBtn = document.getElementById("allBtn");
 const randomBtn = document.getElementById("randomBtn");
+const favBtn = document.getElementById("favBtn");
 const searchInput = document.getElementById("searchInput");
 const darkModeToggle = document.getElementById("darkModeToggle");
 const batchSize = 20;
@@ -39,6 +40,16 @@ function loadRandomImages() {
     let shuffled = [...images].sort(() => 0.5 - Math.random());
     let selected = shuffled.slice(0, 4);
     selected.forEach(url => addImage(url));
+}
+
+async function loadFavorites() {
+    container.innerHTML = "";
+    const favorites = await getFavorites();
+    if (favorites.length === 0) {
+        showError("No favorites yet. Star memes to save them here.");
+        return;
+    }
+    favorites.forEach(url => addImage(url));
 }
 
 function addImage(url) {
@@ -152,6 +163,12 @@ randomBtn.addEventListener("click", () => {
     loadRandomImages();
 });
 
+favBtn.addEventListener("click", () => {
+    clearSearch();
+    currentMode = "favorites";
+    loadFavorites();
+});
+
 const enableDarkMode = () => {
     document.documentElement.setAttribute("data-theme", "dark");
     localStorage.setItem("theme", "dark");
@@ -199,6 +216,23 @@ document.addEventListener("DOMContentLoaded", () => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0]?.id) {
                 chrome.tabs.sendMessage(tabs[0].id, { soundEnabled });
+            }
+        });
+    });
+
+    const toggleQuickFire = document.getElementById("toggleQuickFire");
+
+    chrome.storage.sync.get(["quickFireAutoPost"], (data) => {
+        toggleQuickFire.checked = data.quickFireAutoPost ?? false;
+    });
+
+    toggleQuickFire.addEventListener("change", () => {
+        const enabled = toggleQuickFire.checked;
+        chrome.storage.sync.set({ quickFireAutoPost: enabled });
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                chrome.tabs.sendMessage(tabs[0].id, { quickFireAutoPost: enabled });
             }
         });
     });

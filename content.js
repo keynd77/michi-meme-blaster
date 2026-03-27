@@ -373,6 +373,68 @@ function createMichiButton() {
     return buttonWrapper;
 }
 
+function createQuickFireButton() {
+    const buttonWrapper = document.createElement("div");
+    buttonWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6";
+
+    const button = document.createElement("button");
+    button.setAttribute("role", "button");
+    button.setAttribute("aria-label", "Quick Fire Michi");
+    button.className = "css-175oi2r r-sdzlij r-1phboty r-rs99b7 r-lrvibr r-2yi16 r-1qi8awa r-1loqt21 r-o7ynqc r-6416eg r-1ny4l3l gmichi-quickfire-button";
+    button.style.border = "none";
+    button.style.background = "transparent";
+    button.style.cursor = "pointer";
+    button.style.padding = "5px";
+
+    const buttonInner = document.createElement("div");
+    buttonInner.setAttribute("dir", "ltr");
+    buttonInner.className = "css-146c3p1 r-bcqeeo r-qvutc0 r-37j5jr r-q4m81j r-a023e6 r-rjixqe r-b88u0q r-1awozwy r-6koalj r-18u37iz r-16y2uox r-1777fci";
+    buttonInner.style.color = "#FFD700";
+    buttonInner.style.position = "relative";
+
+    buttonInner.innerHTML = `
+        <div style="position: relative; display: inline-block;">
+            ${michiSVGBase("#FFD700")}
+            <span style="position: absolute; bottom: -2px; right: -4px; font-size: 12px; line-height: 1;">&#9889;</span>
+        </div>
+    `;
+
+    button.addEventListener("mouseenter", () => {
+        buttonInner.style.color = "#FFA500";
+    });
+    button.addEventListener("mouseleave", () => {
+        buttonInner.style.color = "#FFD700";
+    });
+
+    button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        currentMichiButton = event.target;
+
+        if (michiImages.length === 0) {
+            console.error("No Michi images available for quick fire.");
+            return;
+        }
+
+        showLoadingOverlay();
+        const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
+        await uploadImageToTweet(randomImage);
+
+        if (quickFireAutoPost) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+            const tweetButton = document.querySelector('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
+            if (tweetButton) {
+                tweetButton.click();
+            }
+        }
+
+        hideLoadingOverlay();
+    });
+
+    button.appendChild(buttonInner);
+    buttonWrapper.appendChild(button);
+    return buttonWrapper;
+}
+
 async function handleShiftClickMichiButton() {
     showLoadingOverlay();
 
@@ -966,6 +1028,14 @@ function addMichiButtonToAllToolbars() {
 
                 // Insert at the **start** of the toolbar
                 toolbar.insertBefore(michiWrapper, toolbar.firstChild);
+
+                // Add quick fire button
+                if (!toolbar.querySelector('.gmichi-quickfire-wrapper')) {
+                    const quickFireWrapper = document.createElement("div");
+                    quickFireWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-quickfire-wrapper";
+                    quickFireWrapper.appendChild(createQuickFireButton());
+                    toolbar.insertBefore(quickFireWrapper, michiWrapper.nextSibling);
+                }
             }
         });
     } else {
@@ -977,6 +1047,14 @@ function addMichiButtonToAllToolbars() {
 
                 // Insert at the **beginning** instead of the end
                 toolbar.insertBefore(michiWrapper, toolbar.firstChild);
+
+                // Add quick fire button
+                if (!toolbar.querySelector('.gmichi-quickfire-wrapper')) {
+                    const quickFireWrapper = document.createElement("div");
+                    quickFireWrapper.className = "css-175oi2r r-14tvyh0 r-cpa5s6 gmichi-quickfire-wrapper";
+                    quickFireWrapper.appendChild(createQuickFireButton());
+                    toolbar.insertBefore(quickFireWrapper, michiWrapper.nextSibling);
+                }
             }
         });
     }
