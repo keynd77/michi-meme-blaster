@@ -79,7 +79,178 @@ function isFavorite(url, favorites) {
     return favorites.includes(url);
 }
 
+// --- Meme Counter & Gamification ---
+
+const BADGE_DEFINITIONS = [
+    // Milestone badges
+    { id: 'first_meme', name: 'First Meme', desc: 'Post your very first meme', condition: s => s.memeCount >= 1 },
+    { id: 'meme_10', name: 'Meme Apprentice', desc: 'Post 10 memes', condition: s => s.memeCount >= 10 },
+    { id: 'meme_25', name: 'Meme Enthusiast', desc: 'Post 25 memes', condition: s => s.memeCount >= 25 },
+    { id: 'meme_50', name: 'Meme Warrior', desc: 'Post 50 memes', condition: s => s.memeCount >= 50 },
+    { id: 'meme_100', name: 'Meme Master', desc: 'Post 100 memes', condition: s => s.memeCount >= 100 },
+    { id: 'meme_250', name: 'Meme Overlord', desc: 'Post 250 memes', condition: s => s.memeCount >= 250 },
+    { id: 'meme_500', name: 'Meme Legend', desc: 'Post 500 memes', condition: s => s.memeCount >= 500 },
+    { id: 'meme_1000', name: 'Meme God', desc: 'Post 1000 memes', condition: s => s.memeCount >= 1000 },
+    // Streak badges
+    { id: 'streak_3', name: 'Getting Started', desc: 'Post memes 3 days in a row', condition: s => s.currentStreak >= 3 },
+    { id: 'streak_7', name: 'Week Warrior', desc: 'Post memes 7 days in a row', condition: s => s.currentStreak >= 7 },
+    { id: 'streak_14', name: 'Fortnight Fighter', desc: 'Post memes 14 days in a row', condition: s => s.currentStreak >= 14 },
+    { id: 'streak_30', name: 'Monthly Maniac', desc: 'Post memes 30 days in a row', condition: s => s.currentStreak >= 30 },
+    { id: 'streak_100', name: 'Unstoppable', desc: 'Post memes 100 days in a row', condition: s => s.currentStreak >= 100 },
+    // Daily volume badges (kept low to avoid bans)
+    { id: 'daily_5', name: 'Burst Mode', desc: 'Post 5 memes in a single day', condition: s => Object.values(s.dailyLog).some(c => c >= 5) },
+    { id: 'daily_10', name: 'Meme Machine', desc: 'Post 10 memes in a single day', condition: s => Object.values(s.dailyLog).some(c => c >= 10) },
+    // More milestone badges
+    { id: 'meme_2000', name: 'Meme Titan', desc: 'Post 2000 memes', condition: s => s.memeCount >= 2000 },
+    { id: 'meme_5000', name: 'Meme Deity', desc: 'Post 5000 memes', condition: s => s.memeCount >= 5000 },
+    { id: 'meme_10000', name: 'Meme Eternal', desc: 'Post 10000 memes', condition: s => s.memeCount >= 10000 },
+    // Time-based badges
+    { id: 'night_owl', name: 'Night Owl', desc: 'Post a meme between midnight and 4am', condition: s => s._postHour >= 0 && s._postHour < 4 },
+    { id: 'early_bird', name: 'Early Bird', desc: 'Post a meme between 5am and 7am', condition: s => s._postHour >= 5 && s._postHour < 7 },
+    { id: 'lunch_break', name: 'Lunch Break Shiller', desc: 'Post a meme between 12pm and 1pm', condition: s => s._postHour >= 12 && s._postHour < 13 },
+    { id: 'weekend_warrior', name: 'Weekend Warrior', desc: 'Post a meme on a Saturday or Sunday', condition: s => s._postDay === 0 || s._postDay === 6 },
+    // Dedication badges
+    { id: 'days_7', name: 'One Week In', desc: 'Post memes on 7 different days', condition: s => s._uniqueDays >= 7 },
+    { id: 'days_30', name: 'Monthly Regular', desc: 'Post memes on 30 different days', condition: s => s._uniqueDays >= 30 },
+    { id: 'days_100', name: 'The Devoted', desc: 'Post memes on 100 different days', condition: s => s._uniqueDays >= 100 },
+    // Special badges
+    { id: 'first_quickfire', name: 'Quick Draw', desc: 'Use Quick Fire for the first time', condition: null },
+    { id: 'shift_shiller', name: 'Shift Shiller', desc: 'Use Shift+Click to shill the ticker', condition: null },
+    // Hidden / fun badges
+    { id: 'triple_threat', name: 'Triple Threat', desc: 'Post 3+ memes in under a minute (use Quick Fire!)', condition: null },
+];
+
+const MILESTONES = [1, 10, 25, 50, 100, 250, 500, 1000, 2000, 5000, 10000];
+
+function getNextMilestone(memeCount) {
+    for (const m of MILESTONES) {
+        if (memeCount < m) return m;
+    }
+    return null;
+}
+
+function getTodayISO() {
+    return new Date().toISOString().split('T')[0];
+}
+
+function getYesterdayISO() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+}
+
+async function getStats() {
+    return new Promise(resolve => {
+        chrome.storage.sync.get([
+            'memeCount', 'dailyLog', 'currentStreak', 'longestStreak',
+            'lastPostDate', 'badges', 'sidebarCardCollapsed', 'sidebarStatsEnabled',
+            'recentPostTimestamps'
+        ], data => {
+            resolve({
+                memeCount: data.memeCount || 0,
+                dailyLog: data.dailyLog || {},
+                currentStreak: data.currentStreak || 0,
+                longestStreak: data.longestStreak || 0,
+                lastPostDate: data.lastPostDate || null,
+                badges: data.badges || [],
+                sidebarCardCollapsed: data.sidebarCardCollapsed ?? false,
+                sidebarStatsEnabled: data.sidebarStatsEnabled ?? true,
+                recentPostTimestamps: data.recentPostTimestamps || [],
+            });
+        });
+    });
+}
+
+async function incrementMemeCount(specialBadgeId) {
+    const stats = await getStats();
+    const today = getTodayISO();
+    const yesterday = getYesterdayISO();
+    const specialIds = specialBadgeId ? [specialBadgeId] : [];
+
+    stats.memeCount++;
+    stats.dailyLog[today] = (stats.dailyLog[today] || 0) + 1;
+
+    if (stats.lastPostDate === today) {
+        // same day, just increment
+    } else if (stats.lastPostDate === yesterday) {
+        stats.currentStreak++;
+        if (stats.currentStreak > stats.longestStreak) {
+            stats.longestStreak = stats.currentStreak;
+        }
+    } else {
+        stats.currentStreak = 1;
+        if (stats.currentStreak > stats.longestStreak) {
+            stats.longestStreak = stats.currentStreak;
+        }
+    }
+    stats.lastPostDate = today;
+
+    // Track recent post timestamps for triple threat detection
+    const now = new Date();
+    const nowMs = now.getTime();
+    stats.recentPostTimestamps.push(nowMs);
+    // Keep only timestamps from last 2 minutes
+    stats.recentPostTimestamps = stats.recentPostTimestamps.filter(t => nowMs - t < 120000);
+    // Triple threat: 3+ posts within 60 seconds
+    const oneMinAgo = nowMs - 60000;
+    const postsInLastMinute = stats.recentPostTimestamps.filter(t => t >= oneMinAgo).length;
+    if (postsInLastMinute >= 3) {
+        specialIds.push('triple_threat');
+    }
+
+    // Set transient context for badge checks (not persisted)
+    stats._postHour = now.getHours();
+    stats._postDay = now.getDay(); // 0=Sun, 6=Sat
+    stats._uniqueDays = Object.keys(stats.dailyLog).length;
+
+    // Check badges
+    const newBadges = checkBadges(stats, specialIds);
+
+    // Trim dailyLog to last 120 days to stay within storage limits
+    const keys = Object.keys(stats.dailyLog).sort();
+    if (keys.length > 120) {
+        keys.slice(0, keys.length - 120).forEach(k => delete stats.dailyLog[k]);
+    }
+
+    await new Promise(resolve => {
+        chrome.storage.sync.set({
+            memeCount: stats.memeCount,
+            dailyLog: stats.dailyLog,
+            currentStreak: stats.currentStreak,
+            longestStreak: stats.longestStreak,
+            lastPostDate: stats.lastPostDate,
+            badges: stats.badges,
+            recentPostTimestamps: stats.recentPostTimestamps,
+        }, resolve);
+    });
+
+    return { stats, newBadges };
+}
+
+function checkBadges(stats, specialIds) {
+    const specials = Array.isArray(specialIds) ? specialIds : (specialIds ? [specialIds] : []);
+    const newBadges = [];
+
+    for (const badge of BADGE_DEFINITIONS) {
+        if (stats.badges.includes(badge.id)) continue;
+
+        let earned = false;
+        if (badge.condition) {
+            earned = badge.condition(stats);
+        } else if (specials.includes(badge.id)) {
+            earned = true;
+        }
+
+        if (earned) {
+            stats.badges.push(badge.id);
+            newBadges.push(badge);
+        }
+    }
+
+    return newBadges;
+}
+
 // Export for use in other files
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { searchImages, createDebouncedSearch, getFavorites, toggleFavorite, isFavorite };
-} 
+    module.exports = { searchImages, createDebouncedSearch, getFavorites, toggleFavorite, isFavorite, getStats, incrementMemeCount, checkBadges, BADGE_DEFINITIONS, getNextMilestone };
+}
