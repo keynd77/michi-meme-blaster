@@ -522,6 +522,26 @@ function openMichiFlyout(event, button) {
         insertTextInTweetInput(TEXT_TO_ADD + " ");
     };
 
+    const favBtn = document.createElement("button");
+    favBtn.textContent = "Favs";
+    favBtn.style.cssText = buttonStyle;
+    favBtn.onclick = async () => {
+        currentSearchQuery = "";
+        const imageGrid = document.getElementById("michi-grid");
+        if (!imageGrid) return;
+        imageGrid.innerHTML = "";
+
+        const favorites = await getFavorites();
+        if (favorites.length === 0) {
+            showSearchError("No favorites yet. Click the star on any meme to save it.");
+            return;
+        }
+        favorites.forEach(url => {
+            const thumb = createMemeThumb(url, url, 'admin.gmichi.meme', favorites);
+            imageGrid.appendChild(thumb);
+        });
+    };
+
     // Add search input
     const searchContainer = document.createElement("div");
     searchContainer.style.marginBottom = "8px";
@@ -591,6 +611,7 @@ function openMichiFlyout(event, button) {
     searchContainer.appendChild(searchInput);
     searchContainer.appendChild(allBtn);
     searchContainer.appendChild(randomBtn);
+    searchContainer.appendChild(favBtn);
     searchContainer.appendChild(addTextBtn);
     header.appendChild(searchContainer);
 
