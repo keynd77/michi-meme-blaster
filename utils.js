@@ -7,11 +7,10 @@ async function searchImages(query, page = 1, size = 20) {
     }
 
     try {
-        const response = await fetch(`https://www.michi.sbs/api/images?page=${page}&size=${size}&q=${encodeURIComponent(query.trim())}`, {
+        const response = await fetch(`https://michi.meme/api/gallery-memes/search?q=${encodeURIComponent(query.trim())}&limit=${size}&page=${page}`, {
             method: 'GET',
             headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
+                'Accept': 'application/json'
             }
         });
 
@@ -21,11 +20,17 @@ async function searchImages(query, page = 1, size = 20) {
 
         const data = await response.json();
 
-        // Handle the specific API response structure
-        if (data && Array.isArray(data.images)) {
-            // Extract URLs from the image objects
-            const imageData = data.images.filter(image => image.thumbnail_url && image.url).map(image => ({ url: image.url, thumbnailUrl: image.thumbnail_url }));
-            return { images: imageData, pagination: data.pagination };
+        if (data && Array.isArray(data.results)) {
+            const imageData = data.results
+                .filter(meme => meme.mediaUrl)
+                .map(meme => ({
+                    url: meme.mediaUrl,
+                    thumbnailUrl: meme.pngUrl || meme.mediaUrl
+                }));
+            return {
+                images: imageData,
+                pagination: { hasNext: imageData.length >= size, total: data.totalMemes }
+            };
         } else {
             console.warn("Unexpected API response format:", data);
             return { images: [], pagination: null };
@@ -48,7 +53,33 @@ function createDebouncedSearch(callback, delay = 300) {
     };
 }
 
+// Favorites helpers — stored in chrome.storage.sync as URL array
+async function getFavorites() {
+    return new Promise(resolve => {
+        chrome.storage.sync.get(['favorites'], (data) => {
+            resolve(data.favorites || []);
+        });
+    });
+}
+
+async function toggleFavorite(url) {
+    const favorites = await getFavorites();
+    const index = favorites.indexOf(url);
+    if (index === -1) {
+        favorites.push(url);
+    } else {
+        favorites.splice(index, 1);
+    }
+    return new Promise(resolve => {
+        chrome.storage.sync.set({ favorites }, () => resolve(favorites));
+    });
+}
+
+function isFavorite(url, favorites) {
+    return favorites.includes(url);
+}
+
 // Export for use in other files
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { searchImages, createDebouncedSearch };
+    module.exports = { searchImages, createDebouncedSearch, getFavorites, toggleFavorite, isFavorite };
 } 
