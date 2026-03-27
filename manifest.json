@@ -11,8 +11,13 @@
         "https://twitter.com/*",
         "https://x.com/*",
         "https://michi-meme-search.vercel.app/*",
-        "https://michi.meme/*"
+        "https://michi.meme/*",
+        "https://admin.gmichi.meme/*",
+        "https://*.r2.dev/*"
     ],
+    "background": {
+        "service_worker": "background.js"
+    },
     "content_scripts": [
         {
             "matches": [
