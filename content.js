@@ -289,7 +289,7 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
 chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireEnabled", "quickFireAutoPost", "quickFireText"], (data) => {
     likeReplacementEnabled = data.replaceLikeEnabled ?? true;
     soundEnabled = data.soundEnabled ?? false;
-    quickFireEnabled = data.quickFireEnabled ?? false;
+    quickFireEnabled = data.quickFireEnabled ?? true;
     quickFireAutoPost = data.quickFireAutoPost ?? true;
     quickFireText = data.quickFireText || "gmichi";
 
@@ -315,7 +315,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
     if (message.quickFireEnabled !== undefined) {
         quickFireEnabled = message.quickFireEnabled;
-        document.querySelectorAll('.gmichi-quickfire-wrapper').forEach(el => {
+        document.querySelectorAll('.gmichi-quickfire-wrapper, .gmichi-tweet-quickfire').forEach(el => {
             el.style.display = message.quickFireEnabled ? "" : "none";
         });
     }
@@ -665,7 +665,7 @@ function openMichiFlyout(event, button) {
                     }
                     if (key === 'quickFireEnabled') {
                         quickFireEnabled = toggle.checked;
-                        document.querySelectorAll('.gmichi-quickfire-wrapper').forEach(el => {
+                        document.querySelectorAll('.gmichi-quickfire-wrapper, .gmichi-tweet-quickfire').forEach(el => {
                             el.style.display = toggle.checked ? "" : "none";
                         });
                     }
@@ -863,27 +863,27 @@ async function uploadImageToTweet(imageUrl) {
         // Fetch via background service worker to bypass CORS
         const result = await chrome.runtime.sendMessage({ type: 'fetchImage', url: imageUrl });
         if (!result || !result.success) throw new Error(result?.error || "Failed to fetch media");
-        const blob = new Blob([new Uint8Array(result.data)]);
 
-        // Determine file extension and MIME type based on URL
+        // Determine MIME type from response header, fall back to URL-based detection
         const isVideo = isVideoUrl(imageUrl);
-        const fileName = isVideo ? "michi.mp4" : "michi.jpg";
-
-        // Use proper MIME types that Twitter recognizes
-        let mimeType;
-        if (isVideo) {
-            if (imageUrl.endsWith('.mp4')) mimeType = 'video/mp4';
-            else if (imageUrl.endsWith('.webm')) mimeType = 'video/webm';
-            else if (imageUrl.endsWith('.mov')) mimeType = 'video/quicktime';
-            else mimeType = 'video/mp4'; // Default for videos
-        } else {
-            if (imageUrl.endsWith('.jpg') || imageUrl.endsWith('.jpeg')) mimeType = 'image/jpeg';
-            else if (imageUrl.endsWith('.png')) mimeType = 'image/png';
-            else if (imageUrl.endsWith('.gif')) mimeType = 'image/gif';
-            else if (imageUrl.endsWith('.webp')) mimeType = 'image/webp';
-            else mimeType = 'image/jpeg'; // Default for images
+        let mimeType = result.contentType || '';
+        if (!mimeType || mimeType === 'application/octet-stream') {
+            if (isVideo) {
+                if (imageUrl.endsWith('.mp4')) mimeType = 'video/mp4';
+                else if (imageUrl.endsWith('.webm')) mimeType = 'video/webm';
+                else if (imageUrl.endsWith('.mov')) mimeType = 'video/quicktime';
+                else mimeType = 'video/mp4';
+            } else {
+                if (imageUrl.endsWith('.jpg') || imageUrl.endsWith('.jpeg')) mimeType = 'image/jpeg';
+                else if (imageUrl.endsWith('.png')) mimeType = 'image/png';
+                else if (imageUrl.endsWith('.gif')) mimeType = 'image/gif';
+                else if (imageUrl.endsWith('.webp')) mimeType = 'image/webp';
+                else mimeType = 'image/jpeg';
+            }
         }
 
+        const fileName = isVideo ? "michi.mp4" : "michi.jpg";
+        const blob = new Blob([new Uint8Array(result.data)], { type: mimeType });
         const file = new File([blob], fileName, { type: mimeType });
 
         // Find the **correct file input** within the same toolbar as the clicked Michi button
@@ -1098,6 +1098,115 @@ function addMichiButtonToAllToolbars() {
     }
 }
 
+// Add quick fire michi button to tweet action bars (next to reply)
+function addQuickFireToTweetActions() {
+    if (!quickFireEnabled) {
+        console.log('[michi] quickFireEnabled is false, skipping tweet actions');
+        return;
+    }
+
+    const tweets = document.querySelectorAll('article[data-testid="tweet"]');
+    console.log(`[michi] Found ${tweets.length} tweets, quickFireEnabled=${quickFireEnabled}`);
+
+    tweets.forEach((tweet, i) => {
+        if (tweet.querySelector('.gmichi-tweet-quickfire')) return;
+
+        const replyBtn = tweet.querySelector('button[data-testid="reply"]');
+        if (!replyBtn) {
+            console.log(`[michi] Tweet ${i}: no reply button found`);
+            return;
+        }
+
+        const replyWrapper = replyBtn.parentElement;
+        const actionGroup = replyWrapper ? replyWrapper.parentElement : null;
+        console.log(`[michi] Tweet ${i}: replyBtn found, wrapper=${!!replyWrapper}, group=${!!actionGroup}, groupRole=${actionGroup?.getAttribute('role')}`);
+
+        const michiWrapper = document.createElement("div");
+        michiWrapper.className = "gmichi-tweet-quickfire";
+        michiWrapper.style.cssText = "display: flex; align-items: center; justify-content: flex-start; flex: 1 1 0%;";
+
+        const btn = document.createElement("button");
+        btn.setAttribute("role", "button");
+        btn.setAttribute("aria-label", "Quick Fire Michi Reply");
+        btn.className = "css-175oi2r r-1777fci r-bt1l66 r-bztko3 r-lrvibr r-1loqt21 r-1ny4l3l";
+        btn.type = "button";
+
+        const inner = document.createElement("div");
+        inner.setAttribute("dir", "ltr");
+        inner.className = "css-146c3p1 r-bcqeeo r-1ttztb7 r-qvutc0 r-37j5jr r-a023e6 r-rjixqe r-16dba41 r-1awozwy r-6koalj r-1h0z5md r-o7ynqc r-clp7b1 r-3s2u2q";
+        inner.style.color = "rgb(113, 118, 123)";
+        inner.innerHTML = `<div class="css-175oi2r r-xoduu5" style="position: relative; display: inline-flex; align-items: center; justify-content: center;">${michiSVGBase("#FFD700")}<span style="position: absolute; bottom: 0px; right: -6px; font-size: 10px; line-height: 1; pointer-events: none;">&#9889;</span></div>`;
+
+        btn.appendChild(inner);
+
+        btn.addEventListener("mouseenter", () => { inner.style.color = "#FFD700"; });
+        btn.addEventListener("mouseleave", () => { inner.style.color = "rgb(113, 118, 123)"; });
+
+        btn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (michiImages.length === 0) return;
+
+            // Click the reply button to open reply modal
+            replyBtn.click();
+
+            // Wait for reply modal to appear
+            let retries = 0;
+            let tweetInput = null;
+            while (retries < 20) {
+                await new Promise(r => setTimeout(r, 200));
+                tweetInput = document.querySelector('[data-testid="tweetTextarea_0"]');
+                if (tweetInput) break;
+                retries++;
+            }
+            if (!tweetInput) return;
+
+            // Small delay to ensure modal is fully ready
+            await new Promise(r => setTimeout(r, 300));
+
+            // Insert text
+            tweetInput.focus();
+            const text = e.shiftKey
+                ? "check out michi\n\n$MICHI\nCA: AywAYdNJnSLSXwKWYxDciPjqGRnwp4iZdQptuuQTpump "
+                : quickFireText + " ";
+            document.execCommand("insertText", false, text);
+
+            await new Promise(r => setTimeout(r, 300));
+
+            // Find file input in the modal's toolbar
+            const modalToolbar = tweetInput.closest('[data-testid="toolBar"]')
+                || document.querySelector('[data-testid="toolBar"]');
+            const fileInput = modalToolbar
+                ? modalToolbar.querySelector('input[data-testid="fileInput"]')
+                : document.querySelector('input[data-testid="fileInput"]');
+
+            if (fileInput) {
+                const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
+                const response = await fetch(randomImage);
+                if (!response.ok) return;
+                const blob = await response.blob();
+                const file = new File([blob], "michi.jpg", { type: "image/jpeg" });
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+                fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+
+            if (quickFireAutoPost) {
+                await new Promise(r => setTimeout(r, 1000));
+                const postBtn = document.querySelector('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
+                if (postBtn) postBtn.click();
+            }
+
+            if (soundEnabled) playMichiSound();
+        });
+
+        michiWrapper.appendChild(btn);
+        replyWrapper.parentNode.insertBefore(michiWrapper, replyWrapper.nextSibling);
+    });
+}
+
 const likeButtonPaths = {
     default: "M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z",
     liked: "M20.884 13.19c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z" // Filled (liked) heart button
@@ -1155,11 +1264,13 @@ setTimeout(() => {
 
 // Run on page load and observe for changes
 addMichiButtonToAllToolbars();
+addQuickFireToTweetActions();
 replaceProfilePics();
-replaceLikeButtons(); // Also replace like buttons initially
+replaceLikeButtons();
 
 const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
+    addQuickFireToTweetActions();
     replaceProfilePics();
     if (likeReplacementEnabled) {
         replaceLikeButtons();
