@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Michi Meme Blaster",
-    "version": "2.3.0",
+    "version": "3.0.0",
     "description": "Michi meme assistant for Twitter—bullpost $michi fast and easy!",
     "permissions": [
         "activeTab",
@@ -26,6 +26,7 @@
             ],
             "js": [
                 "utils.js",
+                "templates.js",
                 "content.js"
             ]
         }

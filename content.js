@@ -1,5 +1,16 @@
 // Global variables
-const version = "2.3";
+const version = "3.0";
+
+function getSeasonalTag() {
+  const now = new Date();
+  const month = now.getMonth();
+  const day = now.getDate();
+  if (month === 11) return 'christmas';
+  if (month === 9 && day >= 15) return 'halloween';
+  if (month === 1 && day <= 14) return 'valentine';
+  if (month === 0 && day <= 7) return 'newyear';
+  return null;
+}
 let michiImages = [];
 let loadedCount = 0;
 const batchSize = 20;
@@ -255,7 +266,7 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
     img.style.cursor = "pointer";
     img.style.display = "block";
     img.addEventListener("click", () => {
-        uploadImageToTweet(imageUrl, sourceType);
+        uploadImageToTweet(imageUrl, sourceType, 'flyout');
         closeFlyout();
     });
     img.src = thumbnailUrl;
@@ -443,7 +454,7 @@ function createQuickFireButton() {
 
         await new Promise(resolve => setTimeout(resolve, 300));
         const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-        await uploadImageToTweet(randomImage, event.shiftKey ? 'shift_shiller' : 'first_quickfire');
+        await uploadImageToTweet(randomImage, event.shiftKey ? 'shift_shiller' : 'first_quickfire', 'quickfire');
 
         if (quickFireAutoPost) {
             await new Promise(resolve => setTimeout(resolve, 800));
@@ -464,7 +475,7 @@ async function handleShiftClickMichiButton() {
     showLoadingOverlay();
 
     const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-    await uploadImageToTweet(randomImage);
+    await uploadImageToTweet(randomImage, null, 'random');
 
     hideLoadingOverlay();
 }
@@ -476,7 +487,7 @@ async function handleCmdShiftClickMichiButton() {
     await new Promise(resolve => setTimeout(resolve, 300));
 
     const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-    await uploadImageToTweet(randomImage);
+    await uploadImageToTweet(randomImage, null, 'random');
 
     hideLoadingOverlay();
 }
@@ -526,6 +537,33 @@ function shuffleArray(array) {
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
+}
+
+function getTweetContext() {
+    const composers = document.querySelectorAll('[data-testid="tweetTextarea_0"]');
+    for (const composer of composers) {
+        const container = composer.closest('[data-testid="cellInnerDiv"]') || composer.closest('div[class]');
+        if (container) {
+            const tweetTexts = container.querySelectorAll('[data-testid="tweetText"]');
+            if (tweetTexts.length > 0) {
+                return tweetTexts[tweetTexts.length - 1].textContent?.trim().substring(0, 200) || '';
+            }
+        }
+    }
+    const mainTweet = document.querySelector('article [data-testid="tweetText"]');
+    if (mainTweet) return mainTweet.textContent?.trim().substring(0, 200) || '';
+    return '';
+}
+
+async function generateCaption(tweetContext) {
+    const templates = ['gmichi', 'this is the way', '$michi to the moon', 'gm', 'based'];
+    if (tweetContext) {
+        const lower = tweetContext.toLowerCase();
+        if (lower.includes('bear') || lower.includes('dump') || lower.includes('red')) return 'michi doesn\'t care about your FUD 😼';
+        if (lower.includes('pump') || lower.includes('moon') || lower.includes('green')) return '$michi to the moon 🚀';
+        if (lower.includes('gm') || lower.includes('good morning')) return 'gmichi ☀️';
+    }
+    return templates[Math.floor(Math.random() * templates.length)];
 }
 
 // Function to create and open the flyout
@@ -604,7 +642,7 @@ function openMichiFlyout(event, button) {
 
         currentSearchQuery = "";
         const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-        uploadImageToTweet(randomImage, button); // Uploads a random image to the Twitter tweet field
+        uploadImageToTweet(randomImage, null, 'random'); // Uploads a random image to the Twitter tweet field
         closeFlyout(); // Close the extension UI after inserting the image
     };
 
@@ -790,10 +828,50 @@ function openMichiFlyout(event, button) {
         }, 300);
     });
 
+    const trendingBtn = document.createElement("button");
+    trendingBtn.textContent = "🔥";
+    trendingBtn.title = "Trending — most blasted memes today";
+    trendingBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;`;
+    trendingBtn.addEventListener("click", async () => {
+        const container = flyoutContainer.querySelector('.michi-image-container') || imageContainer;
+        if (!container) return;
+        container.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">Loading trending...</div>';
+        const data = await fetchTrending(20);
+        if (!data || !data.trending || !data.trending.length) {
+            container.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">No trending data yet</div>';
+            return;
+        }
+        container.innerHTML = '';
+        for (const meme of data.trending) {
+            const img = document.createElement("img");
+            img.src = meme.url;
+            img.title = `${meme.title || 'Meme'} — blasted ${meme.count}x today`;
+            img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
+            img.addEventListener("click", () => uploadImageToTweet(meme.url));
+            container.appendChild(img);
+        }
+    });
+
     searchContainer.appendChild(searchInput);
     searchContainer.appendChild(allBtn);
     searchContainer.appendChild(randomBtn);
     searchContainer.appendChild(favBtn);
+    searchContainer.appendChild(trendingBtn);
+
+    const seasonalTag = getSeasonalTag();
+    if (seasonalTag) {
+      const seasonalEmoji = { christmas: '🎄', halloween: '🎃', valentine: '💝', newyear: '🎆' };
+      const seasonBtn = document.createElement("button");
+      seasonBtn.textContent = seasonalEmoji[seasonalTag] || '🎉';
+      seasonBtn.title = `Seasonal: ${seasonalTag} memes`;
+      seasonBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;`;
+      seasonBtn.addEventListener("click", async () => {
+        searchInput.value = seasonalTag;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      searchContainer.appendChild(seasonBtn);
+    }
+
     searchContainer.appendChild(addTextBtn);
     searchContainer.appendChild(gearBtn);
     header.appendChild(searchContainer);
@@ -817,14 +895,113 @@ function openMichiFlyout(event, button) {
     footer.style.height = "20px";
     footer.style.background = getComputedStyle(document.body).backgroundColor;
 
+    // Caption button
+    const captionBtn = document.createElement("button");
+    captionBtn.textContent = "✍️";
+    captionBtn.title = "Insert auto-generated caption";
+    captionBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;margin-left:4px;`;
+    captionBtn.addEventListener("click", async () => {
+        const context = getTweetContext();
+        const caption = await generateCaption(context);
+        insertTextInTweetInput(caption + " ");
+    });
+    searchContainer.appendChild(captionBtn);
+
+    // Templates button — opens template editor tab
+    const templatesBtn = document.createElement("button");
+    templatesBtn.textContent = "🎨";
+    templatesBtn.title = "Create meme from template (Sign, Lesson, NSI)";
+    templatesBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;margin-left:4px;`;
+    let templatePanelVisible = false;
+    templatesBtn.addEventListener("click", () => {
+        templatePanelVisible = !templatePanelVisible;
+        templatesBtn.style.borderColor = templatePanelVisible ? '#f7b731' : 'rgb(47,51,54)';
+        templatesBtn.style.color = templatePanelVisible ? '#f7b731' : '#e7e9ea';
+        if (templatePanelVisible) {
+            imageContainer.style.display = 'none';
+            let existingPanel = flyoutContainer.querySelector('#michi-template-panel');
+            if (!existingPanel) {
+                existingPanel = createTemplateTab(flyoutContainer, async (blobUrl) => {
+                    try {
+                        showLoadingOverlay();
+                        const resp = await fetch(blobUrl);
+                        const blob = await resp.blob();
+                        const file = new File([blob], 'michi-template.png', { type: blob.type || 'image/png' });
+                        const targetToolbar = flyoutToolbar;
+                        closeFlyout();
+                        if (!targetToolbar) return;
+                        const fileInput = targetToolbar.querySelector('input[data-testid="fileInput"]');
+                        if (!fileInput) return;
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        fileInput.files = dt.files;
+                        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (soundEnabled) playMichiSound();
+                        const { newBadges } = await incrementMemeCount(null);
+                        newBadges.forEach(b => showBadgeToast(b));
+                        updateSidebarCard();
+                        reportBlast('template', null, null, 'template');
+                    } catch (err) {
+                        console.error('[templates] Upload error:', err);
+                    } finally {
+                        hideLoadingOverlay();
+                        URL.revokeObjectURL(blobUrl);
+                    }
+                });
+                flyoutContainer.insertBefore(existingPanel, footer);
+            }
+            existingPanel.style.display = 'flex';
+        } else {
+            imageContainer.style.display = '';
+            const existingPanel = flyoutContainer.querySelector('#michi-template-panel');
+            if (existingPanel) existingPanel.style.display = 'none';
+        }
+    });
+    searchContainer.appendChild(templatesBtn);
+
     // Append elements in correct order
     flyoutContainer.appendChild(header);
     flyoutContainer.appendChild(imageContainer);
     flyoutContainer.appendChild(footer);
     document.body.appendChild(flyoutContainer);
 
-    // Load first batch of images
-    loadMichiImages("all", true);
+    // Load first batch of images — context-aware if tweet content detected
+    const tweetContext = getTweetContext();
+    if (tweetContext && tweetContext.length > 5) {
+        const cleanContext = tweetContext
+            .replace(/https?:\/\/\S+/g, '')
+            .replace(/[@#$]\w+/g, '')
+            .trim();
+        if (cleanContext.length > 5) {
+            imageContainer.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">🧠 Finding matching memes...</div>';
+            searchImagesIntelligent(cleanContext, 20).then(result => {
+                if (result.images.length > 0) {
+                    imageContainer.innerHTML = '';
+                    const grid = document.createElement("div");
+                    grid.id = "michi-grid";
+                    grid.style.display = "grid";
+                    grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(100px, 1fr))";
+                    grid.style.gap = "10px";
+                    imageContainer.appendChild(grid);
+                    for (const img of result.images) {
+                        const imgEl = document.createElement("img");
+                        imgEl.src = img.thumbnailUrl || img.url;
+                        imgEl.title = img.title || '';
+                        imgEl.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
+                        imgEl.addEventListener("click", () => uploadImageToTweet(img.url));
+                        grid.appendChild(imgEl);
+                    }
+                } else {
+                    loadMichiImages("all", true);
+                }
+            }).catch(() => loadMichiImages("all", true));
+            searchInput.placeholder = `Suggested for: "${cleanContext.substring(0, 30)}..."`;
+        } else {
+            loadMichiImages("all", true);
+        }
+    } else {
+        loadMichiImages("all", true);
+    }
 
     // Attach scroll event for lazy loading
     imageContainer.addEventListener("scroll", () => handleFlyoutScroll(imageContainer));
@@ -868,7 +1045,7 @@ async function loadMichiImages(mode, reset = false) {
     });
 }
 
-async function uploadImageToTweet(imageUrl, specialBadgeId) {
+async function uploadImageToTweet(imageUrl, specialBadgeId, blastContext) {
     try {
         showLoadingOverlay();
 
@@ -932,6 +1109,7 @@ async function uploadImageToTweet(imageUrl, specialBadgeId) {
         const { newBadges } = await incrementMemeCount(specialBadgeId);
         newBadges.forEach(b => showBadgeToast(b));
         updateSidebarCard();
+        reportBlast(imageUrl, null, null, blastContext || 'flyout');
 
     } catch (error) {
         console.error("Error uploading media:", error);
@@ -1382,6 +1560,18 @@ async function injectSidebarCard() {
     parent.insertBefore(card, cardWrapper);
 
     sidebarCardInjected = true;
+
+    // Refresh community counter every 60 seconds
+    setInterval(() => {
+        fetchCommunityCounter().then(data => {
+            if (data) {
+                const counterEl = document.getElementById('michi-community-counter');
+                const todayEl = document.getElementById('michi-community-today');
+                if (counterEl) counterEl.textContent = data.total.toLocaleString();
+                if (todayEl) todayEl.textContent = `${data.today.toLocaleString()} today`;
+            }
+        });
+    }, 60000);
 }
 
 function renderSidebarCard(card, stats) {
@@ -1453,6 +1643,29 @@ function renderSidebarCard(card, stats) {
             <div class="michi-badge-detail" style="display: none; background: #1a1a1a; border: 1px solid #2f3336; border-radius: 6px; padding: 8px 10px; margin-top: 6px;"></div>
         </div>
     `;
+
+    // Community counter section
+    const cardBody = card.querySelector('.michi-sidebar-body');
+    if (cardBody) {
+        const communityDiv = document.createElement('div');
+        communityDiv.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid rgb(47,51,54);text-align:center;';
+        communityDiv.innerHTML = `
+          <div style="font-size:11px;color:rgb(113,118,123);margin-bottom:2px;">Community Blasts</div>
+          <div id="michi-community-counter" style="font-size:18px;font-weight:700;color:#f7b731;">...</div>
+          <div id="michi-community-today" style="font-size:10px;color:rgb(113,118,123);"></div>
+        `;
+        cardBody.appendChild(communityDiv);
+
+        // Fetch and update
+        fetchCommunityCounter().then(data => {
+            if (data) {
+                const counterEl = document.getElementById('michi-community-counter');
+                const todayEl = document.getElementById('michi-community-today');
+                if (counterEl) counterEl.textContent = data.total.toLocaleString();
+                if (todayEl) todayEl.textContent = `${data.today.toLocaleString()} today`;
+            }
+        });
+    }
 
     // Toggle collapse
     const header = card.querySelector('.michi-sidebar-header');

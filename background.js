@@ -1,3 +1,39 @@
+// Badge count: update icon badge text based on today's blast count
+chrome.storage.onChanged.addListener((changes) => {
+    if (changes.memeCount || changes.dailyLog) {
+        const today = new Date().toISOString().split('T')[0];
+        chrome.storage.sync.get(['dailyLog'], (result) => {
+            const todayCount = result.dailyLog?.[today] || 0;
+            if (todayCount > 0) {
+                chrome.action.setBadgeText({ text: String(todayCount) });
+                chrome.action.setBadgeBackgroundColor({ color: '#f7b731' });
+            } else {
+                chrome.action.setBadgeText({ text: '' });
+            }
+        });
+    }
+});
+
+// New memes indicator: check periodically for new memes in gallery
+async function checkNewMemes() {
+    try {
+        const res = await fetch('https://michi.meme/api/gallery-memes?limit=1&page=1');
+        if (!res.ok) return;
+        const data = await res.json();
+        const latestCount = data.totalMemes || data.totalDocs || 0;
+        const stored = await chrome.storage.sync.get(['lastKnownMemeCount']);
+        const lastCount = stored.lastKnownMemeCount || 0;
+        if (latestCount > lastCount && lastCount > 0) {
+            chrome.action.setBadgeText({ text: '•' });
+            chrome.action.setBadgeBackgroundColor({ color: '#e74c3c' });
+        }
+        chrome.storage.sync.set({ lastKnownMemeCount: latestCount });
+    } catch (e) {}
+}
+
+chrome.runtime.onInstalled?.addListener(() => checkNewMemes());
+setInterval(checkNewMemes, 30 * 60 * 1000);
+
 // Proxy image fetches to bypass CORS restrictions on content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'fetchImage') {

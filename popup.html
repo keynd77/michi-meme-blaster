@@ -315,6 +315,10 @@
             </div>
         </div>
 
+        <div style="padding:4px 16px;text-align:center;">
+          <button id="shareTgBtn" style="background:linear-gradient(135deg,#0088cc,#00a0e3);color:#fff;border:none;border-radius:16px;padding:4px 12px;cursor:pointer;font-size:11px;">📤 Share stats in Telegram</button>
+        </div>
+
         <div class="progress-section" id="progressSection">
             <div class="progress-info">
                 <span id="progressText">0/1</span>
@@ -331,6 +335,22 @@
             <div class="badge-detail-desc" id="badgeDetailDesc"></div>
             <div class="badge-detail-status" id="badgeDetailStatus"></div>
         </div>
+    </div>
+
+    <!-- Daily Challenge -->
+    <div id="challengeSection" style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.1);display:none;">
+      <div style="font-size:11px;color:#aaa;margin-bottom:4px;">DAILY CHALLENGE</div>
+      <div id="challengeTitle" style="font-size:13px;font-weight:600;color:#f7b731;"></div>
+      <div id="challengeDesc" style="font-size:11px;color:#ccc;margin-top:2px;"></div>
+      <div id="challengeProgress" style="margin-top:4px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">
+        <div id="challengeBar" style="height:100%;background:#f7b731;width:0%;transition:width 0.3s;"></div>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div id="leaderboardSection" style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="font-size:11px;color:#aaa;margin-bottom:4px;">TOP BLASTERS THIS WEEK</div>
+      <div id="leaderboardList" style="font-size:12px;color:#ccc;"></div>
     </div>
 
     <div class="links-section">

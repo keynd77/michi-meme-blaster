@@ -1,5 +1,154 @@
 // Shared utility functions for Michi Meme Blaster
 
+// --- Twitter Handle Extraction ---
+let _cachedHandle = null;
+let _handleCacheTime = 0;
+const HANDLE_CACHE_MS = 60_000;
+
+function getLoggedInHandle() {
+  const now = Date.now();
+  if (_cachedHandle && (now - _handleCacheTime) < HANDLE_CACHE_MS) {
+    return _cachedHandle;
+  }
+
+  // Method 1: Account switcher button aria-label
+  const switcher = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+  if (switcher) {
+    const label = switcher.getAttribute('aria-label') || '';
+    const match = label.match(/@([\w]+)/);
+    if (match) {
+      _cachedHandle = match[1].toLowerCase();
+      _handleCacheTime = now;
+      return _cachedHandle;
+    }
+  }
+
+  // Method 2: Profile nav link
+  const profileLink = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
+  if (profileLink) {
+    const href = profileLink.getAttribute('href');
+    if (href) {
+      _cachedHandle = href.replace('/', '').toLowerCase();
+      _handleCacheTime = now;
+      return _cachedHandle;
+    }
+  }
+
+  return null;
+}
+
+// --- Blaster API ---
+const BLASTER_API = 'https://michi.meme/api/blaster';
+
+async function reportBlast(memeUrl, memeId, memeTitle, context) {
+  const handle = getLoggedInHandle();
+  if (!handle) return;
+  try {
+    await fetch(`${BLASTER_API}/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        twitterHandle: handle,
+        memeUrl: memeUrl || '',
+        memeId: memeId || undefined,
+        memeTitle: memeTitle || undefined,
+        context: context || 'flyout',
+      }),
+    });
+  } catch (e) {
+    console.debug('Blast report failed:', e);
+  }
+}
+
+async function fetchUserStats() {
+  const handle = getLoggedInHandle();
+  if (!handle) return null;
+  try {
+    const res = await fetch(`${BLASTER_API}/stats?handle=${encodeURIComponent(handle)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function fetchLeaderboard(period = 'weekly', limit = 10) {
+  try {
+    const res = await fetch(`${BLASTER_API}/leaderboard?period=${period}&limit=${limit}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function fetchCommunityCounter() {
+  try {
+    const res = await fetch(`${BLASTER_API}/counter`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function fetchTrending(limit = 12) {
+  try {
+    const res = await fetch(`${BLASTER_API}/trending?limit=${limit}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function fetchChallenge() {
+  try {
+    const res = await fetch(`${BLASTER_API}/challenge`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function searchImagesIntelligent(query, limit = 20) {
+  try {
+    const response = await fetch(
+      `https://michi.meme/api/gallery-memes/search/intelligent?q=${encodeURIComponent(query.trim())}&limit=${limit}`
+    );
+    if (!response.ok) return searchImages(query, 1, limit);
+    const data = await response.json();
+    return {
+      images: (data.results || []).map(r => ({
+        url: r.mediaUrl || r.pngUrl,
+        thumbnailUrl: r.pngUrl || r.mediaUrl,
+        id: r.id,
+        title: r.title,
+        score: r.score,
+      })),
+      pagination: { hasNext: false, total: data.results?.length || 0 },
+    };
+  } catch (e) {
+    return searchImages(query, 1, limit);
+  }
+}
+
+async function getStatsWithServer() {
+  const local = await new Promise(resolve => {
+    chrome.storage.sync.get(
+      ['memeCount', 'dailyLog', 'currentStreak', 'longestStreak', 'lastPostDate', 'badges', 'recentPostTimestamps'],
+      resolve
+    );
+  });
+  if (local.memeCount && local.memeCount > 0) return local;
+  const serverStats = await fetchUserStats();
+  if (serverStats && serverStats.total > 0) {
+    const stats = {
+      memeCount: serverStats.total,
+      currentStreak: serverStats.streak || 0,
+      longestStreak: serverStats.streak || 0,
+      dailyLog: {},
+      lastPostDate: null,
+      badges: [],
+      recentPostTimestamps: [],
+    };
+    chrome.storage.sync.set(stats);
+    return stats;
+  }
+  return local;
+}
+
 // Common search function used by both popup and content script
 async function searchImages(query, page = 1, size = 20) {
     if (!query || query.trim() === "") {

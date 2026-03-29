@@ -60,6 +60,44 @@ document.addEventListener("DOMContentLoaded", async () => {
         grid.appendChild(el);
     });
 
+    // Load daily challenge
+    fetch('https://michi.meme/api/blaster/challenge')
+      .then(r => r.json())
+      .then(data => {
+        if (data.challenge) {
+          document.getElementById('challengeSection').style.display = 'block';
+          document.getElementById('challengeTitle').textContent = `${data.challenge.emoji} ${data.challenge.title}`;
+          document.getElementById('challengeDesc').textContent = data.challenge.description;
+        }
+      })
+      .catch(() => {});
+
+    // Load leaderboard
+    fetch('https://michi.meme/api/blaster/leaderboard?period=weekly&limit=5')
+      .then(r => r.json())
+      .then(data => {
+        if (data.leaderboard && data.leaderboard.length > 0) {
+          const medals = ['🥇', '🥈', '🥉', '4.', '5.'];
+          document.getElementById('leaderboardList').innerHTML = data.leaderboard
+            .map((e, i) => `<div style="margin:2px 0;">${medals[i]} @${e.twitterHandle} — ${e.blasts} blasts</div>`)
+            .join('');
+        }
+      })
+      .catch(() => {});
+
+    // --- Share stats to Telegram ---
+    document.getElementById('shareTgBtn')?.addEventListener('click', async () => {
+      const stats = await new Promise(resolve => {
+        chrome.storage.sync.get(['memeCount', 'dailyLog', 'currentStreak'], resolve);
+      });
+      const today = new Date().toISOString().split('T')[0];
+      const todayCount = stats.dailyLog?.[today] || 0;
+      const text = encodeURIComponent(
+        `🐱 Michi Blaster Stats\n🔥 Total: ${stats.memeCount || 0}\n📅 Today: ${todayCount}\n🔥 Streak: ${stats.currentStreak || 0} days\n\nGet the Michi Meme Blaster! michi.meme`
+      );
+      window.open(`https://t.me/share/url?url=https://michi.meme&text=${text}`, '_blank');
+    });
+
     // --- CA copy ---
     document.getElementById("caRow").addEventListener("click", () => {
         navigator.clipboard.writeText(CA).then(() => {
