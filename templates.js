@@ -132,6 +132,19 @@ function createTemplateTab(flyoutContainer, uploadFn) {
   `;
   previewArea.appendChild(previewImg);
 
+  const previewVideo = document.createElement('video');
+  previewVideo.style.cssText = `
+    max-width: 100%;
+    max-height: 240px;
+    border-radius: 8px;
+    border: 1px solid ${TEMPLATE_STYLES.border};
+    display: none;
+  `;
+  previewVideo.autoplay = true;
+  previewVideo.loop = true;
+  previewVideo.muted = true;
+  previewArea.appendChild(previewVideo);
+
   const postBtn = document.createElement('button');
   postBtn.textContent = '🚀 Post it!';
   postBtn.style.cssText = `
@@ -311,7 +324,16 @@ function createTemplateTab(flyoutContainer, uploadFn) {
 
       const blob = await response.blob();
       generatedBlobUrl = URL.createObjectURL(blob);
-      previewImg.src = generatedBlobUrl;
+      const isVideo = blob.type.startsWith('video/');
+      if (isVideo) {
+        previewVideo.src = generatedBlobUrl;
+        previewVideo.style.display = 'block';
+        previewImg.style.display = 'none';
+      } else {
+        previewImg.src = generatedBlobUrl;
+        previewImg.style.display = 'block';
+        previewVideo.style.display = 'none';
+      }
       previewArea.style.display = 'flex';
       setStatus('');
     } catch (err) {
