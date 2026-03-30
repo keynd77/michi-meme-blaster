@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <meta charset="UTF-8">
     <title>Michi Meme Blaster</title>
     <style>
         * {
@@ -294,29 +295,55 @@
         <p>bullpost $michi fast and easy</p>
     </div>
 
+    <!-- Not on X notice -->
+    <div id="notOnXNotice" style="display:none;padding:16px;text-align:center;color:#aaa;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.1);">
+        Open X / Twitter to see your personal stats
+    </div>
+
     <div class="stats-section">
         <div class="big-number">
-            <div class="count" id="totalCount">0</div>
-            <div class="label">memes posted</div>
+            <div class="count" id="totalCount">-</div>
+            <div class="label" id="totalLabel">memes posted</div>
         </div>
 
         <div class="stats-row">
             <div>
-                <div class="stat-value" id="todayCount">0</div>
+                <div class="stat-value" id="todayCount">-</div>
                 <div class="stat-label">Today</div>
             </div>
             <div>
-                <div class="stat-value" id="currentStreak">0</div>
+                <div class="stat-value" id="currentStreak">-</div>
                 <div class="stat-label">Streak</div>
             </div>
             <div>
-                <div class="stat-value" id="longestStreak">0</div>
+                <div class="stat-value" id="longestStreak">-</div>
                 <div class="stat-label">Best</div>
             </div>
         </div>
 
-        <div style="padding:4px 16px;text-align:center;">
-          <button id="shareTgBtn" style="background:linear-gradient(135deg,#0088cc,#00a0e3);color:#fff;border:none;border-radius:16px;padding:4px 12px;cursor:pointer;font-size:11px;">📤 Share stats in Telegram</button>
+        <div style="padding:6px 16px;display:flex;flex-direction:column;gap:5px;align-items:center;">
+          <div style="display:flex;gap:8px;font-size:11px;color:#aaa;">
+            <label style="cursor:pointer;display:flex;align-items:center;gap:3px;">
+              <input type="radio" name="shareMode" value="all" checked style="accent-color:#f7b731;"> All
+            </label>
+            <label style="cursor:pointer;display:flex;align-items:center;gap:3px;">
+              <input type="radio" name="shareMode" value="today" style="accent-color:#f7b731;"> Today
+            </label>
+            <label style="cursor:pointer;display:flex;align-items:center;gap:3px;">
+              <input type="radio" name="shareMode" value="total" style="accent-color:#f7b731;"> Total
+            </label>
+            <span style="color:rgba(255,255,255,0.15);">|</span>
+            <label style="cursor:pointer;display:flex;align-items:center;gap:3px;">
+              <input type="radio" name="shareTemplate" value="lesson" checked style="accent-color:#f7b731;"> Whiteboard
+            </label>
+            <label style="cursor:pointer;display:flex;align-items:center;gap:3px;">
+              <input type="radio" name="shareTemplate" value="sign" style="accent-color:#f7b731;"> Sign
+            </label>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button id="shareTgBtn" style="background:linear-gradient(135deg,#0088cc,#00a0e3);color:#fff;border:none;border-radius:16px;padding:4px 12px;cursor:pointer;font-size:11px;">Share in TG</button>
+            <button id="refreshBtn" style="background:rgba(255,255,255,0.1);color:#aaa;border:none;border-radius:16px;padding:4px 10px;cursor:pointer;font-size:11px;">Refresh</button>
+          </div>
         </div>
 
         <div class="progress-section" id="progressSection">

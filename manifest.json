@@ -27,6 +27,7 @@
             "js": [
                 "utils.js",
                 "templates.js",
+                "editor.js",
                 "content.js"
             ]
         }
@@ -45,7 +46,8 @@
                 "sound/sound_3.mp3",
                 "sound/sound_4.mp3",
                 "sound/sound_5.mp3",
-                "sound/sound_6.mp3"
+                "sound/sound_6.mp3",
+                "stickers/*.png"
             ],
             "matches": [
                 "<all_urls>"

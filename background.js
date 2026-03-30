@@ -1,19 +1,3 @@
-// Badge count: update icon badge text based on today's blast count
-chrome.storage.onChanged.addListener((changes) => {
-    if (changes.memeCount || changes.dailyLog) {
-        const today = new Date().toISOString().split('T')[0];
-        chrome.storage.sync.get(['dailyLog'], (result) => {
-            const todayCount = result.dailyLog?.[today] || 0;
-            if (todayCount > 0) {
-                chrome.action.setBadgeText({ text: String(todayCount) });
-                chrome.action.setBadgeBackgroundColor({ color: '#f7b731' });
-            } else {
-                chrome.action.setBadgeText({ text: '' });
-            }
-        });
-    }
-});
-
 // New memes indicator: check periodically for new memes in gallery
 async function checkNewMemes() {
     try {

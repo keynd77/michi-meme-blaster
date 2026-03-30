@@ -3,6 +3,22 @@
 
 const TEMPLATE_API = 'https://michi.meme/api/meme-templates';
 
+// Map variant names to sticker image files for visual selector
+const VARIANT_EMOTE_MAP = {
+  normal: 'michi_normal.png',
+  smile: 'bliss.png',
+  grumpy: 'grumpy.png',
+  mean: 'angry.png',
+  sideeyes: 'side-eye.png',
+  troll: 'troll.png',
+  smug: 'smug.png',
+  boss: 'determined.png',
+  neutral: 'neutral.png',
+  excited: 'laughing.png',
+  serious: 'side-eye.png',
+  crashout: 'meltdown.png',
+};
+
 const TEMPLATE_TYPES = [
   {
     id: 'sign',
@@ -146,7 +162,7 @@ function createTemplateTab(flyoutContainer, uploadFn) {
   previewArea.appendChild(previewVideo);
 
   const postBtn = document.createElement('button');
-  postBtn.textContent = '🚀 Post it!';
+  postBtn.textContent = 'Use in post';
   postBtn.style.cssText = `
     padding: 8px 20px;
     border: none;
@@ -236,17 +252,30 @@ function createTemplateTab(flyoutContainer, uploadFn) {
 
       for (const v of tmpl.variants) {
         const vBtn = document.createElement('button');
-        vBtn.textContent = v;
+        vBtn.title = v;
         vBtn.style.cssText = `
-          padding: 4px 10px;
-          border: 1px solid ${TEMPLATE_STYLES.border};
-          border-radius: 14px;
-          background: transparent;
-          color: ${TEMPLATE_STYLES.text};
+          width: 42px; height: 42px;
+          border: 2px solid ${TEMPLATE_STYLES.border};
+          border-radius: 10px;
+          background: rgb(22,24,28);
           cursor: pointer;
-          font-size: 12px;
-          font-family: ${TEMPLATE_STYLES.fontFamily};
+          display: flex; align-items: center; justify-content: center;
+          padding: 3px;
+          transition: border-color 0.15s, background 0.15s;
+          overflow: hidden;
         `;
+        const emoteFile = VARIANT_EMOTE_MAP[v];
+        if (emoteFile) {
+          const emoteImg = document.createElement('img');
+          emoteImg.src = chrome.runtime.getURL(`stickers/${emoteFile}`);
+          emoteImg.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+          emoteImg.alt = v;
+          vBtn.appendChild(emoteImg);
+        } else {
+          vBtn.textContent = v;
+          vBtn.style.fontSize = '11px';
+          vBtn.style.color = TEMPLATE_STYLES.text;
+        }
         vBtn.addEventListener('click', () => selectVariant(v));
         variantBtns[v] = vBtn;
         variantRow.appendChild(vBtn);
@@ -263,8 +292,9 @@ function createTemplateTab(flyoutContainer, uploadFn) {
   function selectVariant(variant) {
     selectedVariant = variant;
     for (const [v, btn] of Object.entries(variantBtns)) {
-      btn.style.borderColor = v === variant ? TEMPLATE_STYLES.accent : TEMPLATE_STYLES.border;
-      btn.style.color = v === variant ? TEMPLATE_STYLES.accent : TEMPLATE_STYLES.text;
+      const isSelected = v === variant;
+      btn.style.borderColor = isSelected ? TEMPLATE_STYLES.accent : TEMPLATE_STYLES.border;
+      btn.style.background = isSelected ? 'rgba(247,183,49,0.15)' : 'rgb(22,24,28)';
     }
   }
 

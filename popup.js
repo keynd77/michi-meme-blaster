@@ -1,14 +1,78 @@
 const CA = "AywAYdNJnSLSXwKWYxDciPjqGRnwp4iZdQptuuQTpump";
 
-document.addEventListener("DOMContentLoaded", async () => {
-    // --- Load & display stats ---
-    const stats = await getStats();
-    const today = getTodayISO();
+let currentHandle = null;
 
-    document.getElementById("totalCount").textContent = stats.memeCount;
-    document.getElementById("todayCount").textContent = stats.dailyLog[today] || 0;
-    document.getElementById("currentStreak").textContent = stats.currentStreak;
-    document.getElementById("longestStreak").textContent = stats.longestStreak;
+async function getHandleFromTab() {
+    try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = tabs[0];
+        if (!tab?.url || (!tab.url.includes('x.com') && !tab.url.includes('twitter.com'))) {
+            return null;
+        }
+        if (!tab.id) return null;
+        const response = await chrome.tabs.sendMessage(tab.id, { type: 'getHandle' });
+        return response?.handle || null;
+    } catch { return null; }
+}
+
+async function loadAndDisplayStats() {
+    const handle = await getHandleFromTab();
+    currentHandle = handle;
+
+    if (!handle) {
+        // Not on X — show notice, show community total only
+        document.getElementById('notOnXNotice').style.display = 'block';
+        document.getElementById('totalLabel').textContent = 'community blasts';
+        document.getElementById('shareTgBtn').style.display = 'none';
+
+        try {
+            const res = await fetch('https://michi.meme/api/blaster/counter');
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('totalCount').textContent = data.total;
+                document.getElementById('todayCount').textContent = data.today;
+                document.getElementById('currentStreak').textContent = '-';
+                document.getElementById('longestStreak').textContent = '-';
+            }
+        } catch {}
+
+        return await getStats(); // return local for badges
+    }
+
+    // On X — fetch user stats from server
+    document.getElementById('notOnXNotice').style.display = 'none';
+    document.getElementById('totalLabel').textContent = 'memes posted';
+    document.getElementById('shareTgBtn').style.display = '';
+
+    const localStats = await getStats();
+    const stats = { ...localStats };
+
+    try {
+        const res = await fetch(`https://michi.meme/api/blaster/stats?handle=${encodeURIComponent(handle)}`);
+        if (res.ok) {
+            const server = await res.json();
+            stats.memeCount = server.total;
+            stats.currentStreak = server.streak;
+            stats.longestStreak = Math.max(localStats.longestStreak, server.streak);
+            document.getElementById('totalCount').textContent = server.total;
+            document.getElementById('todayCount').textContent = server.today;
+            document.getElementById('currentStreak').textContent = server.streak;
+            document.getElementById('longestStreak').textContent = stats.longestStreak;
+            return stats;
+        }
+    } catch {}
+
+    // Fallback to local
+    const today = getTodayISO();
+    document.getElementById('totalCount').textContent = localStats.memeCount;
+    document.getElementById('todayCount').textContent = localStats.dailyLog[today] || 0;
+    document.getElementById('currentStreak').textContent = localStats.currentStreak;
+    document.getElementById('longestStreak').textContent = localStats.longestStreak;
+    return stats;
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    const stats = await loadAndDisplayStats();
 
     // Progress bar
     const nextMilestone = getNextMilestone(stats.memeCount);
@@ -85,17 +149,53 @@ document.addEventListener("DOMContentLoaded", async () => {
       })
       .catch(() => {});
 
+    // --- Refresh button ---
+    document.getElementById('refreshBtn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('refreshBtn');
+      btn.textContent = '...';
+      await loadAndDisplayStats();
+      // Also tell content script to refresh sidebar card
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]?.id) chrome.tabs.sendMessage(tabs[0].id, { type: 'refreshCard' });
+      } catch {}
+      btn.textContent = 'Refresh';
+    });
+
     // --- Share stats to Telegram ---
     document.getElementById('shareTgBtn')?.addEventListener('click', async () => {
-      const stats = await new Promise(resolve => {
-        chrome.storage.sync.get(['memeCount', 'dailyLog', 'currentStreak'], resolve);
-      });
-      const today = new Date().toISOString().split('T')[0];
-      const todayCount = stats.dailyLog?.[today] || 0;
-      const text = encodeURIComponent(
-        `🐱 Michi Blaster Stats\n🔥 Total: ${stats.memeCount || 0}\n📅 Today: ${todayCount}\n🔥 Streak: ${stats.currentStreak || 0} days\n\nGet the Michi Meme Blaster! michi.meme`
-      );
-      window.open(`https://t.me/share/url?url=https://michi.meme&text=${text}`, '_blank');
+      const btn = document.getElementById('shareTgBtn');
+      if (!currentHandle) {
+        btn.textContent = 'Open X first!';
+        setTimeout(() => { btn.textContent = 'Share stats in Telegram'; }, 2000);
+        return;
+      }
+
+      btn.textContent = 'Sending...';
+      btn.disabled = true;
+
+      try {
+        const mode = document.querySelector('input[name="shareMode"]:checked')?.value || 'all';
+        const template = document.querySelector('input[name="shareTemplate"]:checked')?.value || 'lesson';
+        const res = await fetch('https://michi.meme/api/blaster/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ handle: currentHandle, mode, template }),
+        });
+        if (res.ok) {
+          btn.textContent = 'Sent!';
+        } else {
+          const err = await res.json().catch(() => ({}));
+          btn.textContent = err.error || 'Failed';
+        }
+      } catch {
+        btn.textContent = 'Network error';
+      }
+
+      setTimeout(() => {
+        btn.textContent = 'Share stats in Telegram';
+        btn.disabled = false;
+      }, 3000);
     });
 
     // --- CA copy ---

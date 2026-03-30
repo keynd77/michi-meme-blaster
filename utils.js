@@ -102,11 +102,13 @@ async function fetchChallenge() {
   } catch { return null; }
 }
 
-async function searchImagesIntelligent(query, limit = 20) {
+async function searchImagesIntelligent(query, limit = 20, excludeExchanges = false) {
   try {
-    const response = await fetch(
-      `https://michi.meme/api/gallery-memes/search/intelligent?q=${encodeURIComponent(query.trim())}&limit=${limit}`
-    );
+    let url = `https://michi.meme/api/gallery-memes/search/intelligent?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
+    if (excludeExchanges) {
+      url += `&excludeTags=binance,coinbase,kucoin,bitmart,kraken,bybit,okx,gate,mexc,htx,bitget,exchange`;
+    }
+    const response = await fetch(url);
     if (!response.ok) return searchImages(query, 1, limit);
     const data = await response.json();
     return {
@@ -116,6 +118,7 @@ async function searchImagesIntelligent(query, limit = 20) {
         id: r.id,
         title: r.title,
         score: r.score,
+        tags: r.tags || [],
       })),
       pagination: { hasNext: false, total: data.results?.length || 0 },
     };
@@ -124,27 +127,19 @@ async function searchImagesIntelligent(query, limit = 20) {
   }
 }
 
-async function getStatsWithServer() {
-  const local = await new Promise(resolve => {
-    chrome.storage.sync.get(
-      ['memeCount', 'dailyLog', 'currentStreak', 'longestStreak', 'lastPostDate', 'badges', 'recentPostTimestamps'],
-      resolve
-    );
-  });
-  if (local.memeCount && local.memeCount > 0) return local;
+// Fetch stats from server DB, fall back to local storage if offline/no handle.
+// Badges and UI prefs always come from local storage (server doesn't track those).
+async function getStatsFromServer() {
+  const local = await getStats();
   const serverStats = await fetchUserStats();
-  if (serverStats && serverStats.total > 0) {
-    const stats = {
-      memeCount: serverStats.total,
-      currentStreak: serverStats.streak || 0,
-      longestStreak: serverStats.streak || 0,
-      dailyLog: {},
-      lastPostDate: null,
-      badges: [],
-      recentPostTimestamps: [],
-    };
-    chrome.storage.sync.set(stats);
-    return stats;
+  if (serverStats) {
+    local.memeCount = serverStats.total || 0;
+    local.currentStreak = serverStats.streak || 0;
+    // Server doesn't track longestStreak separately — use max of server streak and local
+    local.longestStreak = Math.max(local.longestStreak, serverStats.streak || 0);
+    // Build today count from server
+    local.dailyLog = local.dailyLog || {};
+    local.dailyLog[getTodayISO()] = serverStats.today || 0;
   }
   return local;
 }
@@ -174,7 +169,8 @@ async function searchImages(query, page = 1, size = 20) {
                 .filter(meme => meme.mediaUrl)
                 .map(meme => ({
                     url: meme.mediaUrl,
-                    thumbnailUrl: meme.pngUrl || meme.mediaUrl
+                    thumbnailUrl: meme.pngUrl || meme.mediaUrl,
+                    tags: meme.tags || [],
                 }));
             return {
                 images: imageData,

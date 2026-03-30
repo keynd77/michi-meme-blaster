@@ -1,6 +1,85 @@
 // Global variables
 const version = "3.0";
 
+// Exchange tags — excluded from random/quickfire unless the post mentions them
+const EXCHANGE_TAGS = ['binance', 'coinbase', 'kucoin', 'bitmart', 'kraken', 'bybit', 'okx', 'gate', 'mexc', 'htx', 'bitget', 'exchange'];
+
+function isExchangeMeme(tags) {
+    if (!tags || !Array.isArray(tags)) return false;
+    return tags.some(t => EXCHANGE_TAGS.includes((t || '').toLowerCase()));
+}
+
+function contextMentionsExchange(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return EXCHANGE_TAGS.some(ex => lower.includes(ex));
+}
+
+// --- Blast tracking: count only when tweet is actually posted ---
+function markTweetButtonAsBlaster(memeUrl, badgeId, context) {
+    // Find the tweet button closest to the current composer
+    setTimeout(() => {
+        const btns = document.querySelectorAll('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
+        for (const btn of btns) {
+            btn.setAttribute('data-michi-blast', 'true');
+            btn.setAttribute('data-michi-url', memeUrl || '');
+            btn.setAttribute('data-michi-badge', badgeId || '');
+            btn.setAttribute('data-michi-context', context || 'flyout');
+        }
+    }, 500); // Small delay to let the media attach
+}
+
+// Intercept tweet button clicks globally
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
+    if (!btn || !btn.hasAttribute('data-michi-blast')) return;
+
+    const memeUrl = btn.getAttribute('data-michi-url') || '';
+    const badgeId = btn.getAttribute('data-michi-badge') || null;
+    const context = btn.getAttribute('data-michi-context') || 'flyout';
+
+    // Clean up attributes
+    btn.removeAttribute('data-michi-blast');
+    btn.removeAttribute('data-michi-url');
+    btn.removeAttribute('data-michi-badge');
+    btn.removeAttribute('data-michi-context');
+
+    // Now count it — the tweet is actually being posted
+    const { newBadges } = await incrementMemeCount(badgeId);
+    newBadges.forEach(b => showBadgeToast(b));
+    reportBlast(memeUrl, null, null, context);
+    updateSidebarCard();
+}, true); // Capture phase so we see it before Twitter handles it
+
+// Fast meme lookup for quick fire — uses keyword search with 1.5s timeout
+async function quickContextMeme(context) {
+    const mentionsEx = contextMentionsExchange(context);
+    if (context && context.length > 5) {
+        const cleaned = context.replace(/https?:\/\/\S+/g, '').replace(/[@#$]\w+/g, '').trim();
+        const words = cleaned.split(/\s+/).filter(w => w.length > 3).slice(0, 3);
+        if (words.length > 0) {
+            try {
+                const query = words.join(' ');
+                const result = await Promise.race([
+                    searchImages(query, 1, 20),
+                    new Promise(resolve => setTimeout(() => resolve({ images: [] }), 1500)),
+                ]);
+                if (result.images && result.images.length > 0) {
+                    // Filter out exchange memes unless context mentions one
+                    const filtered = mentionsEx
+                        ? result.images
+                        : result.images.filter(img => !isExchangeMeme(img.tags));
+                    if (filtered.length > 0) {
+                        const pick = filtered[Math.floor(Math.random() * filtered.length)];
+                        return pick.url || pick.thumbnailUrl;
+                    }
+                }
+            } catch {}
+        }
+    }
+    return michiImages[Math.floor(Math.random() * michiImages.length)];
+}
+
 function getSeasonalTag() {
   const now = new Date();
   const month = now.getMonth();
@@ -251,6 +330,20 @@ function showSearchError(message) {
     imageGrid.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100px; color: ${getComputedStyle(document.body).color}; font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">${message}</div>`;
 }
 
+function createVideoThumb(src) {
+    const el = document.createElement("video");
+    el.src = src;
+    el.setAttribute("muted", "");
+    el.muted = true;
+    el.loop = true;
+    el.playsInline = true;
+    el.autoplay = true;
+    el.preload = "metadata";
+    // Force play after a tick (Chrome sometimes blocks autoplay in injected DOM)
+    setTimeout(() => el.play().catch(() => {}), 100);
+    return el;
+}
+
 // Create a meme thumbnail with favorite star overlay for the flyout
 function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
     const wrapper = document.createElement("div");
@@ -259,17 +352,23 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
     wrapper.style.borderRadius = "5px";
     wrapper.style.boxShadow = "0px 2px 5px rgba(0, 0, 0, 0.2)";
 
-    const img = document.createElement("img");
-    img.style.width = "100%";
-    img.style.height = "100px";
-    img.style.objectFit = "cover";
-    img.style.cursor = "pointer";
-    img.style.display = "block";
-    img.addEventListener("click", () => {
+    const isVideo = /\.(mp4|webm|mov|avi|m4v)(\?|$)/i.test(imageUrl) || /\.(mp4|webm|mov|avi|m4v)(\?|$)/i.test(thumbnailUrl);
+    let media;
+    if (isVideo) {
+        media = createVideoThumb(thumbnailUrl);
+    } else {
+        media = document.createElement("img");
+        media.src = thumbnailUrl;
+    }
+    media.style.width = "100%";
+    media.style.height = "100px";
+    media.style.objectFit = "cover";
+    media.style.cursor = "pointer";
+    media.style.display = "block";
+    media.addEventListener("click", () => {
         uploadImageToTweet(imageUrl, sourceType, 'flyout');
         closeFlyout();
     });
-    img.src = thumbnailUrl;
 
     const star = document.createElement("div");
     star.className = "michi-fav-star";
@@ -292,7 +391,7 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
         star.style.color = nowFav ? "#FFD700" : "#fff";
     });
 
-    wrapper.appendChild(img);
+    wrapper.appendChild(media);
     wrapper.appendChild(star);
     return wrapper;
 }
@@ -311,7 +410,17 @@ chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireEnabled
 });
 
 // Listen for messages from popup
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'getHandle') {
+        sendResponse({ handle: getLoggedInHandle() });
+        return;
+    }
+
+    if (message.type === 'refreshCard') {
+        updateSidebarCard();
+        return;
+    }
+
     if (message.replaceLikeEnabled !== undefined) {
         likeReplacementEnabled = message.replaceLikeEnabled;
         if (likeReplacementEnabled) {
@@ -453,8 +562,9 @@ function createQuickFireButton() {
         }
 
         await new Promise(resolve => setTimeout(resolve, 300));
-        const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-        await uploadImageToTweet(randomImage, event.shiftKey ? 'shift_shiller' : 'first_quickfire', 'quickfire');
+        // Fast keyword search for quick fire, fall back to random
+        const quickMeme = await quickContextMeme(getTweetContext());
+        await uploadImageToTweet(quickMeme, event.shiftKey ? 'shift_shiller' : 'first_quickfire', 'quickfire');
 
         if (quickFireAutoPost) {
             await new Promise(resolve => setTimeout(resolve, 800));
@@ -515,6 +625,9 @@ function closeFlyout() {
         document.removeEventListener("click", closeFlyoutOnOutsideClick);
         window.removeEventListener("scroll", updateFlyoutPosition, true);
         window.removeEventListener("resize", updateFlyoutPosition);
+        // Remove spacer padding
+        const spacer = document.getElementById('michi-flyout-spacer');
+        if (spacer) spacer.remove();
     }
 }
 
@@ -555,15 +668,36 @@ function getTweetContext() {
     return '';
 }
 
-async function generateCaption(tweetContext) {
-    const templates = ['gmichi', 'this is the way', '$michi to the moon', 'gm', 'based'];
-    if (tweetContext) {
-        const lower = tweetContext.toLowerCase();
-        if (lower.includes('bear') || lower.includes('dump') || lower.includes('red')) return 'michi doesn\'t care about your FUD 😼';
-        if (lower.includes('pump') || lower.includes('moon') || lower.includes('green')) return '$michi to the moon 🚀';
-        if (lower.includes('gm') || lower.includes('good morning')) return 'gmichi ☀️';
+function getTweetImages() {
+    // Find images in the tweet being replied to (or the main tweet on a tweet page)
+    const composers = document.querySelectorAll('[data-testid="tweetTextarea_0"]');
+    for (const composer of composers) {
+        const container = composer.closest('[data-testid="cellInnerDiv"]') || composer.closest('div[class]');
+        if (container) {
+            // Look for tweet images in the same container (the tweet being replied to)
+            const imgs = container.querySelectorAll('img[src*="pbs.twimg.com/media"]');
+            if (imgs.length > 0) return [...imgs].map(img => img.src);
+        }
     }
-    return templates[Math.floor(Math.random() * templates.length)];
+    // Fall back to main tweet article images
+    const article = document.querySelector('article [data-testid="tweetPhoto"] img');
+    if (article) return [article.src];
+    return [];
+}
+
+function generateCaption() {
+    const captions = [
+        'gmichi',
+        'gmichi fam',
+        'wagmichi',
+        'wagmichi fam',
+        "let's michi",
+        'michi is michi',
+        'check out $michi',
+        '$michi',
+        'michi still standing',
+    ];
+    return captions[Math.floor(Math.random() * captions.length)];
 }
 
 // Function to create and open the flyout
@@ -609,75 +743,74 @@ function openMichiFlyout(event, button) {
     buttonContainer.style.display = "flex";
     buttonContainer.style.justifyContent = "space-around";
 
-    const buttonStyle = `
-        border: none;
-        padding: 6px 12px;
-        cursor: pointer;
-        background: transparent;
-        color: rgb(29, 155, 240);
-        font-size: 14px;
-        font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        font-weight: 700; 
-    `;
+    const iconBtnStyle = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background 0.15s,border-color 0.15s,color 0.15s;`;
 
+    function makeIconBtn(svgHtml, tooltip, onClick) {
+        const btn = document.createElement("button");
+        btn.innerHTML = svgHtml;
+        btn.setAttribute('data-tooltip', tooltip);
+        btn.style.cssText = iconBtnStyle;
+        btn.addEventListener("mouseenter", () => { btn.style.background = 'rgba(255,255,255,0.1)'; });
+        btn.addEventListener("mouseleave", () => { btn.style.background = 'none'; btn.style.borderColor = 'rgb(47,51,54)'; btn.style.color = '#e7e9ea'; });
+        btn.addEventListener("click", onClick);
+        return btn;
+    }
 
-    const allBtn = document.createElement("button");
-    allBtn.textContent = "All";
-    allBtn.style.cssText = buttonStyle;
-    allBtn.onclick = () => {
-        loadedCount = 0;
-        currentSearchQuery = "";
-        loadMichiImages("all", true);
-    };
+    const allBtn = makeIconBtn(
+        `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
+        "All memes",
+        () => { loadedCount = 0; currentSearchQuery = ""; loadMichiImages("all", true); }
+    );
 
-    // Create "Random" button
-    const randomBtn = document.createElement("button");
-    randomBtn.textContent = "Random";
-    randomBtn.style.cssText = buttonStyle;
-    randomBtn.onclick = () => {
-        if (michiImages.length === 0) {
-            console.error("No Michi images available.");
-            return;
+    const randomBtn = makeIconBtn(
+        `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>`,
+        "Random meme — picks and sends one instantly",
+        async () => {
+            if (michiImages.length === 0) { console.error("No Michi images available."); return; }
+            currentSearchQuery = "";
+            const memeUrl = await quickContextMeme(getTweetContext());
+            uploadImageToTweet(memeUrl, null, 'random');
+            closeFlyout();
         }
+    );
 
-        currentSearchQuery = "";
-        const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-        uploadImageToTweet(randomImage, null, 'random'); // Uploads a random image to the Twitter tweet field
-        closeFlyout(); // Close the extension UI after inserting the image
-    };
-
-    const addTextBtn = document.createElement("button");
-    addTextBtn.textContent = "Add Gmichi";
-    addTextBtn.style.cssText = buttonStyle;
-    addTextBtn.onclick = () => {
-        insertTextInTweetInput(TEXT_TO_ADD + " ");
-    };
-
-    const favBtn = document.createElement("button");
-    favBtn.textContent = "Favs";
-    favBtn.style.cssText = buttonStyle;
-    favBtn.onclick = async () => {
-        currentSearchQuery = "";
-        const imageGrid = document.getElementById("michi-grid");
-        if (!imageGrid) return;
-        imageGrid.innerHTML = "";
-
-        const favorites = await getFavorites();
-        if (favorites.length === 0) {
-            showSearchError("No favorites yet. Click the star on any meme to save it.");
-            return;
+    const favBtn = makeIconBtn(
+        `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+        "Favorites — your saved memes",
+        async () => {
+            currentSearchQuery = "";
+            const imageGrid = document.getElementById("michi-grid");
+            if (!imageGrid) return;
+            imageGrid.innerHTML = "";
+            const favorites = await getFavorites();
+            if (favorites.length === 0) { showSearchError("No favorites yet. Click the star on any meme to save it."); return; }
+            favorites.forEach(url => {
+                const thumb = createMemeThumb(url, url, 'admin.gmichi.meme', favorites);
+                imageGrid.appendChild(thumb);
+            });
         }
-        favorites.forEach(url => {
-            const thumb = createMemeThumb(url, url, 'admin.gmichi.meme', favorites);
-            imageGrid.appendChild(thumb);
-        });
-    };
+    );
 
     const gearBtn = document.createElement("button");
-    gearBtn.textContent = "\u2699";
-    gearBtn.style.cssText = buttonStyle;
-    gearBtn.style.fontSize = "18px";
+    gearBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+    gearBtn.setAttribute('data-tooltip', 'Settings');
+    gearBtn.style.cssText = iconBtnStyle;
+    gearBtn.addEventListener("mouseenter", () => { gearBtn.style.background = 'rgba(255,255,255,0.1)'; });
+    gearBtn.addEventListener("mouseleave", () => { gearBtn.style.background = 'none'; gearBtn.style.borderColor = 'rgb(47,51,54)'; gearBtn.style.color = '#e7e9ea'; });
     gearBtn.onclick = () => {
+        // Close template panel if open
+        if (templatePanelVisible) {
+            templatePanelVisible = false;
+            templatesBtn.style.borderColor = 'rgb(47,51,54)';
+            templatesBtn.style.color = '#e7e9ea';
+            const tp = flyoutContainer?.querySelector('#michi-template-panel');
+            if (tp) tp.style.display = 'none';
+            imageContainer.style.display = '';
+        }
+        // Close editor panel if open
+        const ep = flyoutContainer?.querySelector('#michi-editor-panel');
+        if (ep) { ep.style.display = 'none'; imageContainer.style.display = ''; }
+
         const imageGrid = document.getElementById("michi-grid");
         const settingsPanel = document.getElementById("michi-settings");
         if (settingsPanel) {
@@ -767,9 +900,10 @@ function openMichiFlyout(event, button) {
     searchContainer.style.marginBottom = "8px";
     searchContainer.style.display = "flex";
     searchContainer.style.alignItems = "center";
-    searchContainer.style.justifyContent = "space-between";
+    searchContainer.style.gap = "4px";
     searchContainer.style.width = "100%";
     searchContainer.style.padding = "8px 12px";
+    searchContainer.style.flexWrap = "wrap";
 
     const searchInput = document.createElement("input");
     searchInput.type = "text";
@@ -829,9 +963,11 @@ function openMichiFlyout(event, button) {
     });
 
     const trendingBtn = document.createElement("button");
-    trendingBtn.textContent = "🔥";
-    trendingBtn.title = "Trending — most blasted memes today";
-    trendingBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;`;
+    trendingBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 3-7 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.5-2.85 2.5-3.5z"/></svg>`;
+    trendingBtn.setAttribute('data-tooltip', 'Trending');
+    trendingBtn.style.cssText = iconBtnStyle;
+    trendingBtn.addEventListener("mouseenter", () => { trendingBtn.style.background = 'rgba(255,255,255,0.1)'; });
+    trendingBtn.addEventListener("mouseleave", () => { trendingBtn.style.background = 'none'; trendingBtn.style.borderColor = 'rgb(47,51,54)'; trendingBtn.style.color = '#e7e9ea'; });
     trendingBtn.addEventListener("click", async () => {
         const container = flyoutContainer.querySelector('.michi-image-container') || imageContainer;
         if (!container) return;
@@ -842,14 +978,23 @@ function openMichiFlyout(event, button) {
             return;
         }
         container.innerHTML = '';
+        const grid = document.createElement("div");
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;padding:8px;';
         for (const meme of data.trending) {
-            const img = document.createElement("img");
-            img.src = meme.url;
-            img.title = `${meme.title || 'Meme'} — blasted ${meme.count}x today`;
-            img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
-            img.addEventListener("click", () => uploadImageToTweet(meme.url));
-            container.appendChild(img);
+            const isVid = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(meme.url);
+            let el;
+            if (isVid) {
+                el = createVideoThumb(meme.url);
+            } else {
+                el = document.createElement("img");
+                el.src = meme.url;
+            }
+            el.title = meme.title || '';
+            el.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;';
+            el.addEventListener("click", () => { uploadImageToTweet(meme.url); closeFlyout(); });
+            grid.appendChild(el);
         }
+        container.appendChild(grid);
     });
 
     searchContainer.appendChild(searchInput);
@@ -863,8 +1008,8 @@ function openMichiFlyout(event, button) {
       const seasonalEmoji = { christmas: '🎄', halloween: '🎃', valentine: '💝', newyear: '🎆' };
       const seasonBtn = document.createElement("button");
       seasonBtn.textContent = seasonalEmoji[seasonalTag] || '🎉';
-      seasonBtn.title = `Seasonal: ${seasonalTag} memes`;
-      seasonBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;`;
+      seasonBtn.setAttribute('data-tooltip', `${seasonalTag}`);
+      seasonBtn.style.cssText = iconBtnStyle + `font-size:13px;`;
       seasonBtn.addEventListener("click", async () => {
         searchInput.value = seasonalTag;
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -872,8 +1017,10 @@ function openMichiFlyout(event, button) {
       searchContainer.appendChild(seasonBtn);
     }
 
-    searchContainer.appendChild(addTextBtn);
-    searchContainer.appendChild(gearBtn);
+    // Spacer pushes settings to the right
+    const spacer = document.createElement("div");
+    spacer.style.flex = "1";
+    searchContainer.appendChild(spacer);
     header.appendChild(searchContainer);
 
     // Create image grid container (middle content, **scrollable**)
@@ -895,25 +1042,91 @@ function openMichiFlyout(event, button) {
     footer.style.height = "20px";
     footer.style.background = getComputedStyle(document.body).backgroundColor;
 
+    // Grab tweet image button — detects images in the tweet and opens meme maker
+    const tweetImages = getTweetImages();
+    const grabBtn = document.createElement("button");
+    grabBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+    grabBtn.setAttribute('data-tooltip', tweetImages.length ? 'Edit post image' : 'No image in post');
+    grabBtn.style.cssText = iconBtnStyle;
+    if (tweetImages.length === 0) {
+        grabBtn.style.opacity = '0.3';
+        grabBtn.style.cursor = 'default';
+    }
+    grabBtn.addEventListener("mouseenter", () => { if (tweetImages.length) grabBtn.style.background = 'rgba(255,255,255,0.1)'; });
+    grabBtn.addEventListener("mouseleave", () => { grabBtn.style.background = 'none'; grabBtn.style.borderColor = 'rgb(47,51,54)'; grabBtn.style.color = '#e7e9ea'; });
+    let editorPanelVisible = false;
+    grabBtn.addEventListener("click", () => {
+        if (tweetImages.length === 0) return;
+        editorPanelVisible = !editorPanelVisible;
+        grabBtn.style.borderColor = editorPanelVisible ? '#f7b731' : 'rgb(47,51,54)';
+        grabBtn.style.color = editorPanelVisible ? '#f7b731' : '#e7e9ea';
+        if (editorPanelVisible) {
+            imageContainer.style.display = 'none';
+            let existingPanel = flyoutContainer.querySelector('#michi-editor-panel');
+            if (!existingPanel) {
+                const imgUrl = tweetImages[0].replace(/&name=\w+$/, '&name=large');
+                existingPanel = createEditorPanel(imgUrl, async (blobUrl) => {
+                    try {
+                        showLoadingOverlay();
+                        const resp = await fetch(blobUrl);
+                        const blob = await resp.blob();
+                        const file = new File([blob], 'michi-edit.png', { type: 'image/png' });
+                        const targetToolbar = flyoutToolbar;
+                        closeFlyout();
+                        if (!targetToolbar) return;
+                        const fileInput = targetToolbar.querySelector('input[data-testid="fileInput"]');
+                        if (!fileInput) return;
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        fileInput.files = dt.files;
+                        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        // Don't count as blast yet — user still needs to hit Post
+                    } catch (err) {
+                        console.error('[editor] Upload error:', err);
+                    } finally {
+                        hideLoadingOverlay();
+                        URL.revokeObjectURL(blobUrl);
+                    }
+                });
+                flyoutContainer.insertBefore(existingPanel, footer);
+            }
+            existingPanel.style.display = 'flex';
+        } else {
+            imageContainer.style.display = '';
+            const existingPanel = flyoutContainer.querySelector('#michi-editor-panel');
+            if (existingPanel) existingPanel.style.display = 'none';
+        }
+    });
+    searchContainer.appendChild(grabBtn);
+
     // Caption button
     const captionBtn = document.createElement("button");
-    captionBtn.textContent = "✍️";
-    captionBtn.title = "Insert auto-generated caption";
-    captionBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;margin-left:4px;`;
+    captionBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+    captionBtn.setAttribute('data-tooltip', 'Caption');
+    captionBtn.style.cssText = iconBtnStyle;
+    captionBtn.addEventListener("mouseenter", () => { captionBtn.style.background = 'rgba(255,255,255,0.1)'; });
+    captionBtn.addEventListener("mouseleave", () => { captionBtn.style.background = 'none'; captionBtn.style.borderColor = 'rgb(47,51,54)'; captionBtn.style.color = '#e7e9ea'; });
     captionBtn.addEventListener("click", async () => {
         const context = getTweetContext();
-        const caption = await generateCaption(context);
+        const caption = generateCaption();
         insertTextInTweetInput(caption + " ");
     });
     searchContainer.appendChild(captionBtn);
 
     // Templates button — opens template editor tab
     const templatesBtn = document.createElement("button");
-    templatesBtn.textContent = "🎨";
-    templatesBtn.title = "Create meme from template (Sign, Lesson, NSI)";
-    templatesBtn.style.cssText = `background:none;border:1px solid rgb(47,51,54);color:#e7e9ea;border-radius:20px;padding:4px 10px;cursor:pointer;font-size:13px;margin-left:4px;`;
+    templatesBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 21 4.3-4.3"/><path d="M12 2a1 1 0 0 1 .96.73l2.02 7.27 7.27 2.02a1 1 0 0 1 0 1.96l-7.27 2.02-2.02 7.27a1 1 0 0 1-1.92 0L9.02 16l-7.27-2.02a1 1 0 0 1 0-1.96L9.02 9.98l2.02-7.25A1 1 0 0 1 12 2z"/></svg>`;
+    templatesBtn.setAttribute('data-tooltip', 'Templates');
+    templatesBtn.style.cssText = iconBtnStyle;
     let templatePanelVisible = false;
     templatesBtn.addEventListener("click", () => {
+        // Close settings panel if open
+        const sp = document.getElementById("michi-settings");
+        if (sp) { sp.remove(); document.getElementById("michi-grid").style.display = ""; }
+        // Close editor panel if open
+        const ep = flyoutContainer?.querySelector('#michi-editor-panel');
+        if (ep) { ep.style.display = 'none'; imageContainer.style.display = ''; }
+
         templatePanelVisible = !templatePanelVisible;
         templatesBtn.style.borderColor = templatePanelVisible ? '#f7b731' : 'rgb(47,51,54)';
         templatesBtn.style.color = templatePanelVisible ? '#f7b731' : '#e7e9ea';
@@ -936,11 +1149,7 @@ function openMichiFlyout(event, button) {
                         dt.items.add(file);
                         fileInput.files = dt.files;
                         fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                        if (soundEnabled) playMichiSound();
-                        const { newBadges } = await incrementMemeCount(null);
-                        newBadges.forEach(b => showBadgeToast(b));
-                        updateSidebarCard();
-                        reportBlast('template', null, null, 'template');
+                        // Don't count as blast yet — user still needs to hit Post
                     } catch (err) {
                         console.error('[templates] Upload error:', err);
                     } finally {
@@ -958,12 +1167,36 @@ function openMichiFlyout(event, button) {
         }
     });
     searchContainer.appendChild(templatesBtn);
+    searchContainer.appendChild(gearBtn);
 
     // Append elements in correct order
     flyoutContainer.appendChild(header);
     flyoutContainer.appendChild(imageContainer);
     flyoutContainer.appendChild(footer);
     document.body.appendChild(flyoutContainer);
+
+    // Add spacer to page so user can scroll down on short pages (e.g. single tweet view)
+    // This gives the flyout more vertical room
+    let flyoutSpacer = document.getElementById('michi-flyout-spacer');
+    if (!flyoutSpacer) {
+        flyoutSpacer = document.createElement('div');
+        flyoutSpacer.id = 'michi-flyout-spacer';
+        flyoutSpacer.style.cssText = 'height:520px;pointer-events:none;flex-shrink:0;';
+        const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+        if (primaryColumn) {
+            primaryColumn.appendChild(flyoutSpacer);
+        } else {
+            document.body.appendChild(flyoutSpacer);
+        }
+    }
+
+    // If the flyout is too small, scroll down to give it room
+    if (availableHeight < 350) {
+        const scrollBy = 350 - availableHeight;
+        setTimeout(() => {
+            window.scrollBy({ top: scrollBy, behavior: 'smooth' });
+        }, 50);
+    }
 
     // Load first batch of images — context-aware if tweet content detected
     const tweetContext = getTweetContext();
@@ -974,7 +1207,8 @@ function openMichiFlyout(event, button) {
             .trim();
         if (cleanContext.length > 5) {
             imageContainer.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">🧠 Finding matching memes...</div>';
-            searchImagesIntelligent(cleanContext, 20).then(result => {
+            const excludeEx = !contextMentionsExchange(tweetContext);
+            searchImagesIntelligent(cleanContext, 20, excludeEx).then(result => {
                 if (result.images.length > 0) {
                     imageContainer.innerHTML = '';
                     const grid = document.createElement("div");
@@ -983,13 +1217,20 @@ function openMichiFlyout(event, button) {
                     grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(100px, 1fr))";
                     grid.style.gap = "10px";
                     imageContainer.appendChild(grid);
-                    for (const img of result.images) {
-                        const imgEl = document.createElement("img");
-                        imgEl.src = img.thumbnailUrl || img.url;
-                        imgEl.title = img.title || '';
-                        imgEl.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
-                        imgEl.addEventListener("click", () => uploadImageToTweet(img.url));
-                        grid.appendChild(imgEl);
+                    for (const meme of result.images) {
+                        const src = meme.thumbnailUrl || meme.url;
+                        const isVid = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(meme.url) || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src);
+                        let el;
+                        if (isVid) {
+                            el = createVideoThumb(src);
+                        } else {
+                            el = document.createElement("img");
+                            el.src = src;
+                        }
+                        el.title = meme.title || '';
+                        el.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
+                        el.addEventListener("click", () => { uploadImageToTweet(meme.url); closeFlyout(); });
+                        grid.appendChild(el);
                     }
                 } else {
                     loadMichiImages("all", true);
@@ -1005,6 +1246,9 @@ function openMichiFlyout(event, button) {
 
     // Attach scroll event for lazy loading
     imageContainer.addEventListener("scroll", () => handleFlyoutScroll(imageContainer));
+
+    // Focus search input on open
+    setTimeout(() => searchInput.focus(), 50);
 
     // Re-add event listeners every time the flyout opens
     setTimeout(() => {
@@ -1105,11 +1349,8 @@ async function uploadImageToTweet(imageUrl, specialBadgeId, blastContext) {
             playMichiSound();
         }
 
-        // Track meme count & check badges
-        const { newBadges } = await incrementMemeCount(specialBadgeId);
-        newBadges.forEach(b => showBadgeToast(b));
-        updateSidebarCard();
-        reportBlast(imageUrl, null, null, blastContext || 'flyout');
+        // Mark tweet button so we count when the tweet is actually posted
+        markTweetButtonAsBlaster(imageUrl, specialBadgeId, blastContext || 'flyout');
 
     } catch (error) {
         console.error("Error uploading media:", error);
@@ -1367,29 +1608,35 @@ function addQuickFireToTweetActions() {
                 : document.querySelector('input[data-testid="fileInput"]');
 
             if (fileInput) {
-                const randomImage = michiImages[Math.floor(Math.random() * michiImages.length)];
-                const response = await fetch(randomImage);
-                if (!response.ok) return;
-                const blob = await response.blob();
-                const file = new File([blob], "michi.jpg", { type: "image/jpeg" });
+                // Try intelligent search based on the tweet being replied to
+                const tweetEl = tweet.querySelector('[data-testid="tweetText"]');
+                const tweetText = tweetEl?.textContent?.trim().substring(0, 200) || '';
+                const memeUrl = await quickContextMeme(tweetText);
+
+                // Fetch via background worker to bypass CORS
+                const result = await chrome.runtime.sendMessage({ type: 'fetchImage', url: memeUrl });
+                if (!result.success) return;
+
+                const mimeType = result.contentType || 'image/jpeg';
+                const ext = memeUrl.match(/\.(gif|mp4|webm|mov)/) ? memeUrl.split('.').pop() : 'jpg';
+                const blob = new Blob([new Uint8Array(result.data)], { type: mimeType });
+                const file = new File([blob], `michi.${ext}`, { type: mimeType });
                 const dt = new DataTransfer();
                 dt.items.add(file);
                 fileInput.files = dt.files;
                 fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+                // Mark tweet button for counting on actual post
+                markTweetButtonAsBlaster(memeUrl, e.shiftKey ? 'shift_shiller' : 'first_quickfire', 'quickfire');
             }
 
-            // Track meme count & check badges
-            const { newBadges } = await incrementMemeCount(e.shiftKey ? 'shift_shiller' : 'first_quickfire');
-            newBadges.forEach(b => showBadgeToast(b));
-            updateSidebarCard();
+            if (soundEnabled) playMichiSound();
 
             if (quickFireAutoPost) {
                 await new Promise(r => setTimeout(r, 1000));
                 const postBtn = document.querySelector('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
                 if (postBtn) postBtn.click();
             }
-
-            if (soundEnabled) playMichiSound();
         });
 
         michiWrapper.appendChild(btn);
@@ -1518,7 +1765,7 @@ function dismissToast(toast) {
 async function injectSidebarCard() {
     if (sidebarCardInjected) return;
 
-    const stats = await getStats();
+    const stats = await getStatsFromServer();
     if (!stats.sidebarStatsEnabled) return;
 
     const sidebar = document.querySelector('div[data-testid="sidebarColumn"]');
@@ -1641,6 +1888,37 @@ function renderSidebarCard(card, stats) {
                 }).join('')}
             </div>
             <div class="michi-badge-detail" style="display: none; background: #1a1a1a; border: 1px solid #2f3336; border-radius: 6px; padding: 8px 10px; margin-top: 6px;"></div>
+            <div class="michi-share-section" style="margin-top:8px;">
+                <button class="michi-share-toggle-btn" style="
+                    width:100%;padding:6px 0;border:1px solid rgb(47,51,54);
+                    border-radius:8px;background:none;color:#e7e9ea;font-size:12px;
+                    cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+                    transition:background 0.15s;
+                ">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+                    Share on Telegram
+                    <span class="michi-share-arrow" style="font-size:16px;color:#71767b;margin-left:4px;">▾</span>
+                </button>
+                <div class="michi-share-options" style="display:none;margin-top:6px;padding:8px;border:1px solid rgb(47,51,54);border-radius:8px;background:rgb(32,35,39);">
+                    <div style="font-size:10px;color:#71767b;margin-bottom:4px;">What to share</div>
+                    <div style="display:flex;gap:4px;margin-bottom:6px;">
+                        <button data-share-mode="all" class="michi-share-mode active" style="flex:1;padding:4px;border:1px solid rgb(47,51,54);border-radius:6px;background:rgba(250,236,207,0.15);color:#FAECCF;font-size:11px;cursor:pointer;">All</button>
+                        <button data-share-mode="today" class="michi-share-mode" style="flex:1;padding:4px;border:1px solid rgb(47,51,54);border-radius:6px;background:none;color:#e7e9ea;font-size:11px;cursor:pointer;">Today</button>
+                        <button data-share-mode="total" class="michi-share-mode" style="flex:1;padding:4px;border:1px solid rgb(47,51,54);border-radius:6px;background:none;color:#e7e9ea;font-size:11px;cursor:pointer;">Total</button>
+                    </div>
+                    <div style="font-size:10px;color:#71767b;margin-bottom:4px;">Style</div>
+                    <div style="display:flex;gap:4px;margin-bottom:8px;">
+                        <button data-share-tpl="sign" class="michi-share-tpl active" style="flex:1;padding:4px;border:1px solid rgb(47,51,54);border-radius:6px;background:rgba(250,236,207,0.15);color:#FAECCF;font-size:11px;cursor:pointer;">Sign</button>
+                        <button data-share-tpl="lesson" class="michi-share-tpl" style="flex:1;padding:4px;border:1px solid rgb(47,51,54);border-radius:6px;background:none;color:#e7e9ea;font-size:11px;cursor:pointer;">Whiteboard</button>
+                    </div>
+                    <button class="michi-share-send-btn" style="
+                        width:100%;padding:6px;border:none;border-radius:6px;
+                        background:linear-gradient(135deg,#0088cc,#00a0e3);color:#fff;
+                        font-size:12px;font-weight:600;cursor:pointer;
+                    ">Send</button>
+                    <div class="michi-share-status" style="font-size:11px;text-align:center;margin-top:4px;min-height:16px;"></div>
+                </div>
+            </div>
         </div>
     `;
 
@@ -1710,16 +1988,206 @@ function renderSidebarCard(card, stats) {
             `;
         });
     });
+
+    // Share on Telegram — toggle options panel
+    const shareToggle = card.querySelector('.michi-share-toggle-btn');
+    const shareOptions = card.querySelector('.michi-share-options');
+    if (shareToggle && shareOptions) {
+        shareToggle.addEventListener('mouseenter', () => { shareToggle.style.background = 'rgba(255,255,255,0.1)'; });
+        shareToggle.addEventListener('mouseleave', () => { shareToggle.style.background = 'none'; });
+        shareToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            shareOptions.style.display = shareOptions.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Mode buttons
+        let selectedMode = 'all';
+        card.querySelectorAll('.michi-share-mode').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectedMode = btn.dataset.shareMode;
+                card.querySelectorAll('.michi-share-mode').forEach(b => {
+                    b.style.background = 'none'; b.style.color = '#e7e9ea';
+                });
+                btn.style.background = 'rgba(250,236,207,0.15)'; btn.style.color = '#FAECCF';
+            });
+        });
+
+        // Template buttons
+        let selectedTpl = 'sign';
+        card.querySelectorAll('.michi-share-tpl').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectedTpl = btn.dataset.shareTpl;
+                card.querySelectorAll('.michi-share-tpl').forEach(b => {
+                    b.style.background = 'none'; b.style.color = '#e7e9ea';
+                });
+                btn.style.background = 'rgba(250,236,207,0.15)'; btn.style.color = '#FAECCF';
+            });
+        });
+
+        // Send button
+        const sendBtn = card.querySelector('.michi-share-send-btn');
+        const statusEl = card.querySelector('.michi-share-status');
+        if (sendBtn) {
+            sendBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const handle = getLoggedInHandle();
+                if (!handle) {
+                    statusEl.innerHTML = '<span style="color:#f87171;">Could not detect handle</span>';
+                    return;
+                }
+
+                sendBtn.disabled = true;
+                sendBtn.textContent = 'Sending...';
+                statusEl.textContent = '';
+
+                try {
+                    const res = await fetch('https://michi.meme/api/blaster/share', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ handle, mode: selectedMode, template: selectedTpl }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Share failed');
+                    statusEl.innerHTML = '<span style="color:#4ade80;">Sent!</span>';
+                    setTimeout(() => { shareOptions.style.display = 'none'; statusEl.textContent = ''; }, 2000);
+                } catch (err) {
+                    statusEl.innerHTML = `<span style="color:#f87171;">${err.message || 'Failed'}</span>`;
+                }
+
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+            });
+        }
+    }
 }
 
 async function updateSidebarCard() {
     const card = document.querySelector('.michi-sidebar-card');
     if (!card) return;
-    const stats = await getStats();
+    const stats = await getStatsFromServer();
     renderSidebarCard(card, stats);
 }
 
+// --- Tooltip styles ---
+if (!document.getElementById('michi-tooltip-styles')) {
+    const tooltipStyle = document.createElement('style');
+    tooltipStyle.id = 'michi-tooltip-styles';
+    tooltipStyle.textContent = `
+        [data-tooltip] { position: relative; }
+        [data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a1a1a;
+            color: #e7e9ea;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+            z-index: 99999;
+            pointer-events: none;
+            border: 1px solid rgb(47,51,54);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            animation: michiTooltipIn 0.1s ease;
+        }
+        @keyframes michiTooltipIn { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    `;
+    document.head.appendChild(tooltipStyle);
+}
+
 // --- Initialize ---
+
+// --- Bottom Bar Michi Button ---
+
+let michiFloatingBtnInjected = false;
+function injectFloatingMichiButton() {
+    if (michiFloatingBtnInjected || document.getElementById('michi-floating-btn')) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'michi-floating-btn';
+    btn.title = 'Michi Blaster Stats';
+    btn.style.cssText = `
+        position: fixed; bottom: 147px; right: 20px; z-index: 9999;
+        width: 55px; height: 55px; max-width: 55px;
+        border-radius: 16px;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgb(75, 78, 82);
+        box-shadow: rgba(255, 255, 255, 0.2) 0px 0px 15px, rgba(255, 255, 255, 0.15) 0px 0px 3px 1px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+        color: #e7e9ea;
+        pointer-events: auto;
+        align-self: flex-end;
+    `;
+    btn.innerHTML = michiSVGBase('none');
+
+    btn.addEventListener('mouseenter', () => {
+        btn.style.transform = 'scale(1.05)';
+    });
+    btn.addEventListener('mouseleave', () => {
+        btn.style.transform = 'scale(1)';
+    });
+
+    let popup = null;
+
+    btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+
+        if (popup && popup.parentNode) {
+            popup.remove();
+            popup = null;
+            return;
+        }
+
+        popup = document.createElement('div');
+        popup.id = 'michi-floating-popup';
+        popup.style.cssText = `
+            position: fixed; bottom: 186px; right: 16px; width: 320px;
+            background: rgb(22, 24, 28); border: 1px solid rgb(47, 51, 54);
+            border-radius: 16px; z-index: 10000; overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #e7e9ea; max-height: 500px; overflow-y: auto;
+        `;
+
+        const closeBtn = document.createElement('div');
+        closeBtn.style.cssText = `
+            position: sticky; top: 0; text-align: right; padding: 6px 10px 0 0;
+            cursor: pointer; color: #71767b; font-size: 18px; z-index: 1;
+        `;
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            popup.remove();
+            popup = null;
+        });
+        popup.appendChild(closeBtn);
+
+        const stats = await getStatsFromServer();
+        renderSidebarCard(popup, stats);
+
+        document.body.appendChild(popup);
+
+        const outsideHandler = (ev) => {
+            if (popup && !popup.contains(ev.target) && !btn.contains(ev.target)) {
+                popup.remove();
+                popup = null;
+                document.removeEventListener('click', outsideHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', outsideHandler), 100);
+    });
+
+    document.body.appendChild(btn);
+    michiFloatingBtnInjected = true;
+}
 
 // Run on page load and observe for changes
 addMichiButtonToAllToolbars();
@@ -1727,6 +2195,7 @@ addQuickFireToTweetActions();
 replaceProfilePics();
 replaceLikeButtons();
 injectSidebarCard();
+injectFloatingMichiButton();
 
 const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
