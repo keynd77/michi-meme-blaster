@@ -268,7 +268,7 @@ function replaceProfilePics() {
                     if (existing && existing.src === user.gifUrl) return;
                     if (existing) existing.remove();
                     const img = container.querySelector("img");
-                    if (img) {
+                    if (img && img.parentNode) {
                         const video = document.createElement("video");
                         video.src = user.gifUrl;
                         video.className = "michi-avatar-video";
@@ -277,7 +277,9 @@ function replaceProfilePics() {
                         video.muted = true;
                         video.playsInline = true;
                         video.controls = false;
-                        video.style.cssText = `width:${img.offsetWidth || 40}px;height:${img.offsetHeight || 40}px;border-radius:50%;object-fit:cover;position:absolute;top:0;left:0;`;
+                        // Make parent relative so absolute positioning works
+                        img.parentNode.style.position = 'relative';
+                        video.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;border-radius:50%;object-fit:cover;';
                         img.style.opacity = "0";
                         img.parentNode.insertBefore(video, img);
                     }
