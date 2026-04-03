@@ -283,5 +283,64 @@ document.addEventListener("DOMContentLoaded", async () => {
         const enabled = toggleAnimatedPics.checked;
         chrome.storage.sync.set({ animatedProfilePicsEnabled: enabled });
         sendToContentScript({ animatedProfilePicsEnabled: enabled });
+        updateAnimatedPicsPreview(enabled);
+    });
+
+    // Animated pics preview panel
+    const previewPanel = document.getElementById("animatedPicsPreview");
+    const previewImages = document.getElementById("animatedPicsImages");
+    const previewAvatar = document.getElementById("animatedPicsAvatar");
+    const previewHeader = document.getElementById("animatedPicsHeader");
+    const previewPlaceholder = document.getElementById("animatedPicsPlaceholder");
+
+    function updateAnimatedPicsPreview(enabled) {
+        if (!enabled) {
+            previewPanel.classList.remove("visible");
+            return;
+        }
+        previewPanel.classList.add("visible");
+
+        // Get user handle + cached profile styles from content script / storage
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const tab = tabs[0];
+            const handle = tab?.url?.match(/x\.com\/([^/?#]+)/)?.[1]?.toLowerCase();
+
+            chrome.storage.local.get(["profileStylesCache"], (stored) => {
+                const styles = stored.profileStylesCache?.data || [];
+                const userHandle = handle && !["home", "explore", "notifications", "messages", "search"].includes(handle)
+                    ? handle : null;
+                const entry = userHandle ? styles.find(s => s.twitterHandle === userHandle) : null;
+
+                if (entry && (entry.avatarGifUrl || entry.headerImageUrl)) {
+                    previewImages.style.display = "flex";
+                    previewPlaceholder.style.display = "none";
+                    if (entry.avatarGifUrl) {
+                        previewAvatar.src = entry.avatarGifUrl;
+                        previewAvatar.style.display = "block";
+                    } else {
+                        previewAvatar.style.display = "none";
+                    }
+                    if (entry.headerImageUrl) {
+                        previewHeader.src = entry.headerImageUrl;
+                        previewHeader.style.display = "block";
+                    } else {
+                        previewHeader.style.display = "none";
+                    }
+                } else {
+                    previewImages.style.display = "none";
+                    previewPlaceholder.style.display = "block";
+                    previewPlaceholder.textContent = userHandle
+                        ? `No custom GIF set for @${userHandle}`
+                        : "Visit your X profile to see your GIF preview";
+                }
+            });
+        });
+    }
+
+    // Show preview if already enabled on load
+    chrome.storage.sync.get("animatedProfilePicsEnabled", (data) => {
+        if (data.animatedProfilePicsEnabled ?? true) {
+            updateAnimatedPicsPreview(true);
+        }
     });
 });

@@ -216,6 +216,58 @@
             border-top: 1px solid #2f3336;
         }
 
+        .animated-pics-preview {
+            margin-top: 8px;
+            padding: 10px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 8px;
+            display: none;
+        }
+
+        .animated-pics-preview.visible {
+            display: block;
+        }
+
+        .animated-pics-images {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .animated-pics-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #2f3336;
+        }
+
+        .animated-pics-header {
+            flex: 1;
+            height: 28px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 2px solid #2f3336;
+        }
+
+        .animated-pics-placeholder {
+            font-size: 11px;
+            color: #71767b;
+            margin-bottom: 6px;
+        }
+
+        .animated-pics-link {
+            display: inline-block;
+            font-size: 11px;
+            color: #FAECCF;
+            text-decoration: none;
+        }
+
+        .animated-pics-link:hover {
+            text-decoration: underline;
+        }
+
         .settings-section h3 {
             font-size: 13px;
             font-weight: 700;
@@ -418,6 +470,14 @@
         <div class="setting-row">
             <label for="toggleAnimatedPics">Animated Profile Pics</label>
             <input type="checkbox" id="toggleAnimatedPics" class="toggle">
+        </div>
+        <div class="animated-pics-preview" id="animatedPicsPreview">
+            <div class="animated-pics-images" id="animatedPicsImages" style="display:none;">
+                <img id="animatedPicsAvatar" class="animated-pics-avatar" alt="Your avatar GIF">
+                <img id="animatedPicsHeader" class="animated-pics-header" alt="Your header image">
+            </div>
+            <p class="animated-pics-placeholder" id="animatedPicsPlaceholder" style="display:none;"></p>
+            <a href="https://michi.meme/dashboard" target="_blank" class="animated-pics-link">⚙ Set your GIF at michi.meme/dashboard</a>
         </div>
     </div>
 
