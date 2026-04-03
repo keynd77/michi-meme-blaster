@@ -2347,15 +2347,26 @@ injectFloatingMichiButton();
 replaceAdsWithMichiBanner();
 
 const observer = new MutationObserver(() => {
-    addMichiButtonToAllToolbars();
-    addQuickFireToTweetActions();
-    if (animatedProfilePicsEnabled) replaceProfilePics();
-    replaceAdsWithMichiBanner();
-    if (likeReplacementEnabled) {
-        replaceLikeButtons();
+    // Extension was reloaded/updated — stop the observer gracefully
+    if (!chrome.runtime?.id) {
+        observer.disconnect();
+        return;
     }
-    if (!sidebarCardInjected) {
-        injectSidebarCard();
+    try {
+        addMichiButtonToAllToolbars();
+        addQuickFireToTweetActions();
+        if (animatedProfilePicsEnabled) replaceProfilePics();
+        replaceAdsWithMichiBanner();
+        if (likeReplacementEnabled) {
+            replaceLikeButtons();
+        }
+        if (!sidebarCardInjected) {
+            injectSidebarCard();
+        }
+    } catch (e) {
+        if (e?.message?.includes('Extension context invalidated')) {
+            observer.disconnect();
+        }
     }
 });
 
@@ -2363,7 +2374,11 @@ observer.observe(document.body, { childList: true, subtree: true });
 
 // Re-apply profile pic replacements on X SPA navigation
 let lastPathname = window.location.pathname;
-setInterval(() => {
+const navInterval = setInterval(() => {
+    if (!chrome.runtime?.id) {
+        clearInterval(navInterval);
+        return;
+    }
     if (window.location.pathname !== lastPathname) {
         lastPathname = window.location.pathname;
         if (animatedProfilePicsEnabled) replaceProfilePics();
