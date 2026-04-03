@@ -290,8 +290,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     const previewPanel = document.getElementById("animatedPicsPreview");
     const previewImages = document.getElementById("animatedPicsImages");
     const previewAvatar = document.getElementById("animatedPicsAvatar");
+    const previewAvatarVideo = document.getElementById("animatedPicsAvatarVideo");
     const previewHeader = document.getElementById("animatedPicsHeader");
+    const previewHeaderVideo = document.getElementById("animatedPicsHeaderVideo");
     const previewPlaceholder = document.getElementById("animatedPicsPlaceholder");
+
+    function isVideoUrl(url) {
+        return url && url.toLowerCase().endsWith('.mp4');
+    }
+
+    function setMediaPreview(imgEl, videoEl, url) {
+        if (!url) {
+            imgEl.style.display = "none";
+            videoEl.style.display = "none";
+            return;
+        }
+        if (isVideoUrl(url)) {
+            imgEl.style.display = "none";
+            videoEl.src = url;
+            videoEl.style.display = "block";
+        } else {
+            videoEl.style.display = "none";
+            imgEl.src = url;
+            imgEl.style.display = "block";
+        }
+    }
 
     function updateAnimatedPicsPreview(enabled) {
         if (!enabled) {
@@ -314,18 +337,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (entry && (entry.avatarGifUrl || entry.headerImageUrl)) {
                     previewImages.style.display = "flex";
                     previewPlaceholder.style.display = "none";
-                    if (entry.avatarGifUrl) {
-                        previewAvatar.src = entry.avatarGifUrl;
-                        previewAvatar.style.display = "block";
-                    } else {
-                        previewAvatar.style.display = "none";
-                    }
-                    if (entry.headerImageUrl) {
-                        previewHeader.src = entry.headerImageUrl;
-                        previewHeader.style.display = "block";
-                    } else {
-                        previewHeader.style.display = "none";
-                    }
+                    setMediaPreview(previewAvatar, previewAvatarVideo, entry.avatarGifUrl || null);
+                    setMediaPreview(previewHeader, previewHeaderVideo, entry.headerImageUrl || null);
                 } else {
                     previewImages.style.display = "none";
                     previewPlaceholder.style.display = "block";
