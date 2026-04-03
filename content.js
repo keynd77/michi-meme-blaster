@@ -199,6 +199,38 @@ const PROFILE_STYLES_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 let profileStylesList = []; // { twitterHandle, avatarGifUrl, headerImageUrl }
 
+// Blob URL cache: gifUrl -> blobUrl (bypasses X's img-src CSP)
+const profilePicBlobCache = new Map();
+
+function getProfilePicBlobUrl(gifUrl) {
+    return new Promise(resolve => {
+        if (profilePicBlobCache.has(gifUrl)) { resolve(profilePicBlobCache.get(gifUrl)); return; }
+        if (!isExtensionContextValid()) { resolve(null); return; }
+        chrome.runtime.sendMessage({ type: 'fetchImage', url: gifUrl }, response => {
+            if (!response?.success) { resolve(null); return; }
+            const blob = new Blob([new Uint8Array(response.data)], { type: response.contentType || 'image/gif' });
+            const blobUrl = URL.createObjectURL(blob);
+            profilePicBlobCache.set(gifUrl, blobUrl);
+            resolve(blobUrl);
+        });
+    });
+}
+
+function applyAvatarBlobUrl(username, blobUrl) {
+    const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${username}"]`);
+    avatarContainers.forEach(container => {
+        const bgDiv = container.querySelector('div[style*="background-image"]');
+        if (bgDiv && !bgDiv.style.backgroundImage.includes(blobUrl)) {
+            bgDiv.style.backgroundImage = `url("${blobUrl}")`;
+        }
+        const img = container.querySelector('img');
+        if (img && img.src !== blobUrl) {
+            img.src = blobUrl;
+            img.alt = `Animated profile pic for ${username}`;
+        }
+    });
+}
+
 async function fetchAndReplaceProfilePics() {
     if (!animatedProfilePicsEnabled) return;
 
@@ -264,21 +296,18 @@ function _doReplaceProfilePics() {
     const usersToReplace = Array.from(mergedMap.values()).filter(u => u.gifUrl || u.headerImageUrl);
 
     for (const user of usersToReplace) {
-        // Avatar replacement — only GIF/image URLs (MP4 not supported in feed:
-        // dozens of simultaneous <video> elements freeze the tab)
+        // Avatar replacement — fetch through background to get a blob: URL
+        // that bypasses X's img-src CSP (r2.dev is not in X's allowlist)
         if (user.gifUrl && !isVideoUrl(user.gifUrl)) {
-            const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
-            avatarContainers.forEach(container => {
-                const bgDiv = container.querySelector('div[style*="background-image"]');
-                if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
-                    bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
-                }
-                const img = container.querySelector("img");
-                if (img && img.src !== user.gifUrl) {
-                    img.src = user.gifUrl;
-                    img.alt = `Animated profile pic for ${user.username}`;
-                }
-            });
+            const cached = profilePicBlobCache.get(user.gifUrl);
+            if (cached) {
+                applyAvatarBlobUrl(user.username, cached);
+            } else {
+                // Kick off async fetch; next interval run will use cached blob
+                getProfilePicBlobUrl(user.gifUrl).then(blobUrl => {
+                    if (blobUrl) applyAvatarBlobUrl(user.username, blobUrl);
+                });
+            }
         }
 
         // Header replacement (only on profile pages)
