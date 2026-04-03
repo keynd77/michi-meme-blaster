@@ -2368,7 +2368,6 @@ const observer = new MutationObserver(() => {
         try {
             addMichiButtonToAllToolbars();
             addQuickFireToTweetActions();
-            if (animatedProfilePicsEnabled) replaceProfilePics();
             replaceAdsWithMichiBanner();
             if (likeReplacementEnabled) {
                 replaceLikeButtons();
@@ -2386,17 +2385,19 @@ const observer = new MutationObserver(() => {
 
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Re-apply profile pic replacements on X SPA navigation
+// Profile pic replacement on its own slow interval — kept out of the
+// MutationObserver to avoid feedback loops from inserted video/style nodes.
 let lastPathname = window.location.pathname;
-const navInterval = setInterval(() => {
+const profilePicInterval = setInterval(() => {
     if (!chrome.runtime?.id) {
-        clearInterval(navInterval);
+        clearInterval(profilePicInterval);
         return;
     }
+    if (animatedProfilePicsEnabled) replaceProfilePics();
+    // Also handle SPA navigation
     if (window.location.pathname !== lastPathname) {
         lastPathname = window.location.pathname;
-        if (animatedProfilePicsEnabled) replaceProfilePics();
     }
-}, 1000);
+}, 3000);
 
 console.info(`michi meme blaster ${version} active!`);
