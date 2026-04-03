@@ -260,16 +260,37 @@ function replaceProfilePics() {
     for (const user of usersToReplace) {
         // Avatar replacement
         if (user.gifUrl) {
+            const isAvatarVideo = isVideoUrl(user.gifUrl);
             const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
             avatarContainers.forEach(container => {
-                const bgDiv = container.querySelector('div[style*="background-image"]');
-                if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
-                    bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
-                }
-                const img = container.querySelector("img");
-                if (img && img.src !== user.gifUrl) {
-                    img.src = user.gifUrl;
-                    img.alt = `Animated profile pic for ${user.username}`;
+                if (isAvatarVideo) {
+                    const existing = container.querySelector('video.michi-avatar-video');
+                    if (existing && existing.src === user.gifUrl) return;
+                    if (existing) existing.remove();
+                    const img = container.querySelector("img");
+                    if (img) {
+                        const video = document.createElement("video");
+                        video.src = user.gifUrl;
+                        video.className = "michi-avatar-video";
+                        video.autoplay = true;
+                        video.loop = true;
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.controls = false;
+                        video.style.cssText = `width:${img.offsetWidth || 40}px;height:${img.offsetHeight || 40}px;border-radius:50%;object-fit:cover;position:absolute;top:0;left:0;`;
+                        img.style.opacity = "0";
+                        img.parentNode.insertBefore(video, img);
+                    }
+                } else {
+                    const bgDiv = container.querySelector('div[style*="background-image"]');
+                    if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
+                        bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
+                    }
+                    const img = container.querySelector("img");
+                    if (img && img.src !== user.gifUrl) {
+                        img.src = user.gifUrl;
+                        img.alt = `Animated profile pic for ${user.username}`;
+                    }
                 }
             });
         }
