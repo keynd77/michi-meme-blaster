@@ -231,8 +231,14 @@ async function fetchAndReplaceProfilePics() {
     });
 }
 
+let _replacingProfilePics = false;
 function replaceProfilePics() {
     if (!animatedProfilePicsEnabled) return;
+    if (_replacingProfilePics) return;
+    _replacingProfilePics = true;
+    try { _doReplaceProfilePics(); } finally { _replacingProfilePics = false; }
+}
+function _doReplaceProfilePics() {
 
     // Build merged list: start with vipUserConfig as fallback
     const mergedMap = new Map();
@@ -2348,28 +2354,34 @@ injectSidebarCard();
 injectFloatingMichiButton();
 replaceAdsWithMichiBanner();
 
+let observerDebounce = null;
 const observer = new MutationObserver(() => {
     // Extension was reloaded/updated — stop the observer gracefully
     if (!chrome.runtime?.id) {
         observer.disconnect();
         return;
     }
-    try {
-        addMichiButtonToAllToolbars();
-        addQuickFireToTweetActions();
-        if (animatedProfilePicsEnabled) replaceProfilePics();
-        replaceAdsWithMichiBanner();
-        if (likeReplacementEnabled) {
-            replaceLikeButtons();
+    // Debounce: collapse rapid bursts of mutations into a single run
+    if (observerDebounce) return;
+    observerDebounce = setTimeout(() => {
+        observerDebounce = null;
+        try {
+            addMichiButtonToAllToolbars();
+            addQuickFireToTweetActions();
+            if (animatedProfilePicsEnabled) replaceProfilePics();
+            replaceAdsWithMichiBanner();
+            if (likeReplacementEnabled) {
+                replaceLikeButtons();
+            }
+            if (!sidebarCardInjected) {
+                injectSidebarCard();
+            }
+        } catch (e) {
+            if (e?.message?.includes('Extension context invalidated')) {
+                observer.disconnect();
+            }
         }
-        if (!sidebarCardInjected) {
-            injectSidebarCard();
-        }
-    } catch (e) {
-        if (e?.message?.includes('Extension context invalidated')) {
-            observer.disconnect();
-        }
-    }
+    }, 200);
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
