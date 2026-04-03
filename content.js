@@ -264,41 +264,19 @@ function _doReplaceProfilePics() {
     const usersToReplace = Array.from(mergedMap.values()).filter(u => u.gifUrl || u.headerImageUrl);
 
     for (const user of usersToReplace) {
-        // Avatar replacement
-        if (user.gifUrl) {
-            const isAvatarVideo = isVideoUrl(user.gifUrl);
+        // Avatar replacement — only GIF/image URLs (MP4 not supported in feed:
+        // dozens of simultaneous <video> elements freeze the tab)
+        if (user.gifUrl && !isVideoUrl(user.gifUrl)) {
             const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
             avatarContainers.forEach(container => {
-                if (isAvatarVideo) {
-                    const existing = container.querySelector('video.michi-avatar-video');
-                    if (existing && existing.src === user.gifUrl) return;
-                    if (existing) existing.remove();
-                    const img = container.querySelector("img");
-                    if (img && img.parentNode) {
-                        const video = document.createElement("video");
-                        video.src = user.gifUrl;
-                        video.className = "michi-avatar-video";
-                        video.autoplay = true;
-                        video.loop = true;
-                        video.muted = true;
-                        video.playsInline = true;
-                        video.controls = false;
-                        // Make parent relative so absolute positioning works
-                        img.parentNode.style.position = 'relative';
-                        video.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;border-radius:50%;object-fit:cover;';
-                        img.style.opacity = "0";
-                        img.parentNode.insertBefore(video, img);
-                    }
-                } else {
-                    const bgDiv = container.querySelector('div[style*="background-image"]');
-                    if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
-                        bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
-                    }
-                    const img = container.querySelector("img");
-                    if (img && img.src !== user.gifUrl) {
-                        img.src = user.gifUrl;
-                        img.alt = `Animated profile pic for ${user.username}`;
-                    }
+                const bgDiv = container.querySelector('div[style*="background-image"]');
+                if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
+                    bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
+                }
+                const img = container.querySelector("img");
+                if (img && img.src !== user.gifUrl) {
+                    img.src = user.gifUrl;
+                    img.alt = `Animated profile pic for ${user.username}`;
                 }
             });
         }
