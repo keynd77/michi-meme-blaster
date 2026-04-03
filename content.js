@@ -108,6 +108,23 @@ let hasMoreSearchResults = true;
 let isSearching = false;
 let searchTimeout = null;
 
+// Search result cache (in-memory, 5min TTL, max 10 entries)
+const _searchCache = new Map();
+const _SEARCH_CACHE_TTL = 5 * 60 * 1000;
+function _getCachedSearch(query) {
+    const entry = _searchCache.get(query.toLowerCase());
+    if (!entry) return null;
+    if (Date.now() - entry.ts > _SEARCH_CACHE_TTL) { _searchCache.delete(query.toLowerCase()); return null; }
+    return entry;
+}
+function _setCachedSearch(query, images, pagination) {
+    if (_searchCache.size >= 10) _searchCache.delete(_searchCache.keys().next().value);
+    _searchCache.set(query.toLowerCase(), { images, pagination, ts: Date.now() });
+}
+
+// Hover preload for intelligent context search
+let _preloadedContext = null; // { context, result } or { context, promise }
+
 
 function isVideoUrl(url) {
     if (!url) return false;
@@ -486,9 +503,20 @@ function createMichiButton() {
     // Inline SVG with fixed stroke width (40)
     buttonInner.innerHTML = michiSVGBase("none");
 
-    // Hover effect (matches Twitter button behavior)
+    // Hover effect (matches Twitter button behavior) + preload intelligent search
     button.addEventListener("mouseenter", () => {
         buttonInner.style.color = "#FAECCF"; // Example hover color (Orange)
+        // Preload context-aware search so it's ready when flyout opens
+        const tweetContext = getTweetContext();
+        if (tweetContext && tweetContext.length > 5) {
+            const cleanContext = tweetContext.replace(/https?:\/\/\S+/g, '').replace(/[@#$]\w+/g, '').trim();
+            if (cleanContext.length > 5 && _preloadedContext?.context !== cleanContext) {
+                const excludeEx = !contextMentionsExchange(tweetContext);
+                const promise = searchImagesIntelligent(cleanContext, 20, excludeEx);
+                _preloadedContext = { context: cleanContext, result: promise };
+                promise.then(result => { _preloadedContext = { context: cleanContext, result }; }).catch(() => {});
+            }
+        }
     });
 
     button.addEventListener("mouseleave", () => {
@@ -944,7 +972,14 @@ function openMichiFlyout(event, button) {
                 currentSearchQuery = query;
                 hasMoreSearchResults = true;
 
-                const result = await searchImages(query, 1);
+                const cached = _getCachedSearch(query);
+                let result;
+                if (cached) {
+                    result = cached;
+                } else {
+                    result = await searchImages(query, 1);
+                    if (result.images.length > 0) _setCachedSearch(query, result.images, result.pagination);
+                }
 
                 if (result.images.length === 0) {
                     showSearchError("No results found. Try a different search term.");
@@ -1206,37 +1241,41 @@ function openMichiFlyout(event, button) {
             .replace(/[@#$]\w+/g, '')
             .trim();
         if (cleanContext.length > 5) {
-            imageContainer.innerHTML = '<div style="color:#aaa;text-align:center;padding:20px;">🧠 Finding matching memes...</div>';
-            const excludeEx = !contextMentionsExchange(tweetContext);
-            searchImagesIntelligent(cleanContext, 20, excludeEx).then(result => {
-                if (result.images.length > 0) {
-                    imageContainer.innerHTML = '';
-                    const grid = document.createElement("div");
-                    grid.id = "michi-grid";
-                    grid.style.display = "grid";
-                    grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(100px, 1fr))";
-                    grid.style.gap = "10px";
-                    imageContainer.appendChild(grid);
-                    for (const meme of result.images) {
-                        const src = meme.thumbnailUrl || meme.url;
-                        const isVid = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(meme.url) || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src);
-                        let el;
-                        if (isVid) {
-                            el = createVideoThumb(src);
-                        } else {
-                            el = document.createElement("img");
-                            el.src = src;
-                        }
-                        el.title = meme.title || '';
-                        el.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
-                        el.addEventListener("click", () => { uploadImageToTweet(meme.url); closeFlyout(); });
-                        grid.appendChild(el);
-                    }
-                } else {
-                    loadMichiImages("all", true);
-                }
-            }).catch(() => loadMichiImages("all", true));
+            // Show local images immediately, then swap in intelligent results
+            loadMichiImages("all", true);
             searchInput.placeholder = `Suggested for: "${cleanContext.substring(0, 30)}..."`;
+            const excludeEx = !contextMentionsExchange(tweetContext);
+            // Use hover-preloaded result if context matches, otherwise fetch
+            const preloaded = _preloadedContext?.context === cleanContext ? _preloadedContext.result : null;
+            const searchPromise = preloaded instanceof Promise ? preloaded
+                : preloaded ? Promise.resolve(preloaded)
+                : searchImagesIntelligent(cleanContext, 20, excludeEx);
+            searchPromise.then(result => {
+                if (!flyoutContainer || result.images.length === 0) return;
+                const container = flyoutContainer.querySelector('.michi-image-container') || imageContainer;
+                container.innerHTML = '';
+                const grid = document.createElement("div");
+                grid.id = "michi-grid";
+                grid.style.display = "grid";
+                grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(100px, 1fr))";
+                grid.style.gap = "10px";
+                container.appendChild(grid);
+                for (const meme of result.images) {
+                    const src = meme.thumbnailUrl || meme.url;
+                    const isVid = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(meme.url) || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src);
+                    let el;
+                    if (isVid) {
+                        el = createVideoThumb(src);
+                    } else {
+                        el = document.createElement("img");
+                        el.src = src;
+                    }
+                    el.title = meme.title || '';
+                    el.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;';
+                    el.addEventListener("click", () => { uploadImageToTweet(meme.url); closeFlyout(); });
+                    grid.appendChild(el);
+                }
+            }).catch(() => {});
         } else {
             loadMichiImages("all", true);
         }
@@ -1490,13 +1529,22 @@ function closeFlyoutOnOutsideClick(e) {
 function addMichiButtonToAllToolbars() {
     const photoButtons = findAddPhotoButtons();
 
+    // Helper: check if a ScrollSnap-List is inside a tweet compose toolbar
+    function isComposeToolbar(toolbar) {
+        // Must be inside a toolBar (tweet compose area)
+        if (toolbar.closest('[data-testid="toolBar"]')) return true;
+        // Or near a tweet textarea
+        const parent = toolbar.closest('[role="dialog"]') || toolbar.closest('[data-testid="primaryColumn"]') || toolbar.parentElement?.parentElement?.parentElement;
+        if (parent && parent.querySelector('[data-testid="tweetTextarea_0"]')) return true;
+        return false;
+    }
+
     if (photoButtons.length > 0) {
         // Found at least one image button → Place Michi button next to all of them
         photoButtons.forEach(photoButton => {
             const toolbar = photoButton.closest('[data-testid="ScrollSnap-List"]');
-            if (!toolbar) return; // Skip if no toolbar is found
+            if (!toolbar) return;
 
-            // Ensure Michi buttons are only added once
             if (!toolbar.querySelector('.gmichi-toolbar-button-wrapper')) {
                 const michiWrapper = document.createElement("div");
                 michiWrapper.setAttribute("role", "presentation");
@@ -1514,7 +1562,9 @@ function addMichiButtonToAllToolbars() {
             }
         });
     } else {
+        // Fallback: only inject into ScrollSnap-Lists that are inside compose toolbars
         document.querySelectorAll('[data-testid="ScrollSnap-List"]').forEach(toolbar => {
+            if (!isComposeToolbar(toolbar)) return;
             if (!toolbar.querySelector(".gmichi-toolbar-button-wrapper")) {
                 const michiWrapper = document.createElement("div");
                 michiWrapper.setAttribute("role", "presentation");
@@ -2189,6 +2239,44 @@ function injectFloatingMichiButton() {
     michiFloatingBtnInjected = true;
 }
 
+// --- Ad replacement ---
+const AD_STICKERS = [
+    'michi_normal.png', 'smug.png', 'side-eye.png', 'troll.png',
+    'grumpy.png', 'laughing.png', 'rofl.png', 'neutral.png',
+];
+
+function replaceAdsWithMichiBanner() {
+    // Ads have impression-tracking pixel divs that normal tweets don't
+    const adCells = document.querySelectorAll(
+        '[data-testid="cellInnerDiv"]:has([data-testid="top-impression-pixel"]):not([data-michi-ad-replaced])'
+    );
+    adCells.forEach(cell => {
+        cell.setAttribute('data-michi-ad-replaced', 'true');
+        const inner = cell.firstElementChild;
+        if (inner) inner.style.display = 'none';
+
+        const stickerFile = AD_STICKERS[Math.floor(Math.random() * AD_STICKERS.length)];
+        const stickerUrl = chrome.runtime.getURL(`stickers/${stickerFile}`);
+        const banner = document.createElement('div');
+        banner.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            height: 50px;
+            padding: 0 16px;
+            border-top: 1px solid rgb(47,51,54);
+            border-bottom: 1px solid rgb(47,51,54);
+            color: rgb(113, 118, 123);
+            font-size: 13px;
+        `;
+        banner.innerHTML = `
+            <img src="${stickerUrl}" style="height: 36px; width: 36px; object-fit: contain;" />
+            <span>michi removed this ad for you</span>
+        `;
+        cell.appendChild(banner);
+    });
+}
+
 // Run on page load and observe for changes
 addMichiButtonToAllToolbars();
 addQuickFireToTweetActions();
@@ -2196,11 +2284,13 @@ replaceProfilePics();
 replaceLikeButtons();
 injectSidebarCard();
 injectFloatingMichiButton();
+replaceAdsWithMichiBanner();
 
 const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
     addQuickFireToTweetActions();
     replaceProfilePics();
+    replaceAdsWithMichiBanner();
     if (likeReplacementEnabled) {
         replaceLikeButtons();
     }
