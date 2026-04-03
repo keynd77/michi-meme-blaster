@@ -1,5 +1,16 @@
 // Shared utility functions for Michi Meme Blaster
 
+// Silently swallow "Extension context invalidated" errors from stale content scripts
+window.addEventListener('unhandledrejection', (e) => {
+    if (e?.reason?.message?.includes('Extension context invalidated')) {
+        e.preventDefault();
+    }
+});
+
+function isExtensionContextValid() {
+    try { return !!chrome.runtime?.id; } catch { return false; }
+}
+
 // --- Twitter Handle Extraction ---
 let _cachedHandle = null;
 let _handleCacheTime = 0;
@@ -200,6 +211,7 @@ function createDebouncedSearch(callback, delay = 300) {
 
 // Favorites helpers — stored in chrome.storage.sync as URL array
 async function getFavorites() {
+    if (!isExtensionContextValid()) return [];
     return new Promise(resolve => {
         chrome.storage.sync.get(['favorites'], (data) => {
             resolve(data.favorites || []);
@@ -208,6 +220,7 @@ async function getFavorites() {
 }
 
 async function toggleFavorite(url) {
+    if (!isExtensionContextValid()) return [];
     const favorites = await getFavorites();
     const index = favorites.indexOf(url);
     if (index === -1) {
@@ -285,6 +298,11 @@ function getYesterdayISO() {
 }
 
 async function getStats() {
+    if (!isExtensionContextValid()) return {
+        memeCount: 0, dailyLog: {}, currentStreak: 0, longestStreak: 0,
+        lastPostDate: null, badges: [], sidebarCardCollapsed: false,
+        sidebarStatsEnabled: true, recentPostTimestamps: [],
+    };
     return new Promise(resolve => {
         chrome.storage.sync.get([
             'memeCount', 'dailyLog', 'currentStreak', 'longestStreak',
@@ -307,6 +325,7 @@ async function getStats() {
 }
 
 async function incrementMemeCount(specialBadgeId) {
+    if (!isExtensionContextValid()) return { newBadges: [] };
     const stats = await getStats();
     const today = getTodayISO();
     const yesterday = getYesterdayISO();
