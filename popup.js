@@ -153,8 +153,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById('refreshBtn')?.addEventListener('click', async () => {
       const btn = document.getElementById('refreshBtn');
       btn.textContent = '...';
+      // Bust profile styles cache so content script re-fetches on next refreshCard
+      chrome.storage.local.remove('profileStylesCache');
       await loadAndDisplayStats();
-      // Also tell content script to refresh sidebar card
+      // Tell content script to refresh sidebar card + re-fetch profile styles
       try {
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]?.id) chrome.tabs.sendMessage(tabs[0].id, { type: 'refreshCard' });

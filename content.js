@@ -483,6 +483,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === 'refreshCard') {
         updateSidebarCard();
+        // Also bust profile styles cache and re-fetch
+        chrome.storage.local.remove(PROFILE_STYLES_CACHE_KEY, () => {
+            if (animatedProfilePicsEnabled) fetchAndReplaceProfilePics();
+        });
         return;
     }
 
