@@ -214,11 +214,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const toggleQuickFireAuto = document.getElementById("toggleQuickFireAuto");
     const quickFireTextInput = document.getElementById("quickFireTextInput");
     const toggleSidebarStats = document.getElementById("toggleSidebarStats");
+    const toggleAnimatedPics = document.getElementById("toggleAnimatedPics");
 
     // Load stored settings
     chrome.storage.sync.get([
         "replaceLikeEnabled", "soundEnabled", "quickFireEnabled",
-        "quickFireAutoPost", "quickFireText", "sidebarStatsEnabled"
+        "quickFireAutoPost", "quickFireText", "sidebarStatsEnabled", "animatedProfilePicsEnabled"
     ], (data) => {
         toggleMichiMode.checked = data.replaceLikeEnabled ?? true;
         toggleSound.checked = data.soundEnabled ?? false;
@@ -226,6 +227,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         toggleQuickFireAuto.checked = data.quickFireAutoPost ?? false;
         quickFireTextInput.value = data.quickFireText || "gmichi";
         toggleSidebarStats.checked = data.sidebarStatsEnabled ?? true;
+        toggleAnimatedPics.checked = data.animatedProfilePicsEnabled ?? true;
     });
 
     // Setting change handlers
@@ -275,5 +277,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         const enabled = toggleSidebarStats.checked;
         chrome.storage.sync.set({ sidebarStatsEnabled: enabled });
         sendToContentScript({ sidebarStatsEnabled: enabled });
+    });
+
+    toggleAnimatedPics.addEventListener("change", () => {
+        const enabled = toggleAnimatedPics.checked;
+        chrome.storage.sync.set({ animatedProfilePicsEnabled: enabled });
+        sendToContentScript({ animatedProfilePicsEnabled: enabled });
     });
 });

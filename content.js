@@ -100,6 +100,7 @@ let soundEnabled = false;
 let quickFireEnabled = true;
 let quickFireAutoPost = true;
 let quickFireText = "gmichi";
+let animatedProfilePicsEnabled = true;
 const TEXT_TO_ADD = "gmichi";
 let sidebarCardInjected = false;
 let currentSearchPage = 1;
@@ -191,58 +192,100 @@ function playMichiSound() {
 
 // Profile picture replacement targeting parent div with href="/username"
 // Profile picture and header photo replacement
-async function replaceProfilePics() {
-    for (const user of vipUserConfig.users) {
-        // Validate profile GIF URL
-        const isProfileGifValid = await checkImageUrl(user.gifUrl);
-        if (!isProfileGifValid) {
-            console.error(`Invalid or unreachable profile GIF URL for ${user.username}: ${user.gifUrl}`);
-            continue;
+
+const PROFILE_STYLES_URL = 'https://michi.meme/api/blaster/profile-styles';
+const PROFILE_STYLES_CACHE_KEY = 'profileStylesCache';
+const PROFILE_STYLES_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+let profileStylesList = []; // { twitterHandle, avatarGifUrl, headerImageUrl }
+
+async function fetchAndReplaceProfilePics() {
+    if (!animatedProfilePicsEnabled) return;
+
+    // Check cache first
+    chrome.storage.local.get([PROFILE_STYLES_CACHE_KEY], async (stored) => {
+        const cached = stored[PROFILE_STYLES_CACHE_KEY];
+        const now = Date.now();
+
+        if (cached && cached.fetchedAt && (now - cached.fetchedAt) < PROFILE_STYLES_TTL_MS) {
+            profileStylesList = cached.data || [];
+            replaceProfilePics();
+            return;
         }
-        console.log(`Profile GIF valid for ${user.username}: ${user.gifUrl}`);
 
-        // Replace profile pictures using data-testid (exactly as original)
-        const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
-        avatarContainers.forEach(container => {
-            const bgDiv = container.querySelector('div[style*="background-image"]');
-            if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
-                console.log(`Replacing profile background for ${user.username}: ${bgDiv.style.backgroundImage}`);
-                bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
-            }
+        // Fetch fresh
+        try {
+            const res = await fetch(PROFILE_STYLES_URL);
+            if (!res.ok) throw new Error('Non-200 response');
+            const data = await res.json();
+            profileStylesList = Array.isArray(data) ? data : [];
+            chrome.storage.local.set({
+                [PROFILE_STYLES_CACHE_KEY]: { data: profileStylesList, fetchedAt: now }
+            });
+        } catch (e) {
+            console.warn('Failed to fetch profile styles, using cached/empty:', e);
+            profileStylesList = cached?.data || [];
+        }
 
-            const img = container.querySelector("img");
-            if (img && img.src !== user.gifUrl) {
-                console.log(`Replacing profile img for ${user.username}: ${img.src}`);
-                img.src = user.gifUrl;
-                img.alt = `Animated profile pic for ${user.username}`;
-            }
+        replaceProfilePics();
+    });
+}
+
+function replaceProfilePics() {
+    if (!animatedProfilePicsEnabled) return;
+
+    // Build merged list: start with vipUserConfig as fallback
+    const mergedMap = new Map();
+    for (const u of vipUserConfig.users) {
+        mergedMap.set(u.username.toLowerCase(), {
+            username: u.username.toLowerCase(),
+            gifUrl: u.gifUrl,
+            headerImageUrl: u.headerImageUrl,
         });
+    }
 
-        // Check if header URL is provided
+    // DB values override vipUserConfig
+    for (const entry of profileStylesList) {
+        const handle = entry.twitterHandle.toLowerCase();
+        const existing = mergedMap.get(handle) || { username: handle };
+        mergedMap.set(handle, {
+            username: handle,
+            gifUrl: entry.avatarGifUrl || existing.gifUrl || null,
+            headerImageUrl: entry.headerImageUrl || existing.headerImageUrl || null,
+        });
+    }
+
+    const usersToReplace = Array.from(mergedMap.values()).filter(u => u.gifUrl || u.headerImageUrl);
+
+    for (const user of usersToReplace) {
+        // Avatar replacement
+        if (user.gifUrl) {
+            const avatarContainers = document.querySelectorAll(`div[data-testid="UserAvatar-Container-${user.username}"]`);
+            avatarContainers.forEach(container => {
+                const bgDiv = container.querySelector('div[style*="background-image"]');
+                if (bgDiv && !bgDiv.style.backgroundImage.includes(user.gifUrl)) {
+                    bgDiv.style.backgroundImage = `url("${user.gifUrl}")`;
+                }
+                const img = container.querySelector("img");
+                if (img && img.src !== user.gifUrl) {
+                    img.src = user.gifUrl;
+                    img.alt = `Animated profile pic for ${user.username}`;
+                }
+            });
+        }
+
+        // Header replacement (only on profile pages)
         if (user.headerImageUrl) {
-            // Determine if the header is a video or an image based on file extension
             const isVideo = isVideoUrl(user.headerImageUrl);
-            console.log(`Header URL for ${user.username} is a ${isVideo ? "video" : "GIF/image"}`);
-
-            // Now handle header replacement based on the detected type
             const headerLinks = document.querySelectorAll(`a[href="/${user.username}/header_photo"]`);
             headerLinks.forEach(link => {
                 const parentDiv = link.parentElement;
                 if (!parentDiv) return;
 
-                // If it's a video file, use video tag replacement method
                 if (isVideo) {
-                    // Skip if we already added a video
-                    if (parentDiv.querySelector('video.michi-header-video')) {
-                        return;
-                    }
-
-                    // Find the image to replace with video
+                    if (parentDiv.querySelector('video.michi-header-video')) return;
                     const img = parentDiv.querySelector("img");
                     if (img) {
-                        console.log(`Replacing header with video for ${user.username}`);
-
-                        // Create video element
                         const video = document.createElement("video");
                         video.src = user.headerImageUrl;
                         video.className = "michi-header-video";
@@ -251,45 +294,25 @@ async function replaceProfilePics() {
                         video.muted = true;
                         video.playsInline = true;
                         video.controls = false;
-
-                        // Match styling
                         video.style.width = img.style.width || "100%";
                         video.style.height = img.style.height || "100%";
                         video.style.objectFit = "cover";
                         video.style.position = "absolute";
                         video.style.top = "0";
                         video.style.left = "0";
-
-                        // Replace image with video
-                        img.style.opacity = "0"; // Hide original image but keep layout
+                        img.style.opacity = "0";
                         img.parentNode.insertBefore(video, img);
                     }
-                }
-                // If it's a GIF/image, use the original method (background replacement)
-                else {
-                    // Check if header URL is valid
-                    checkImageUrl(user.headerImageUrl).then(isValid => {
-                        if (!isValid) {
-                            console.error(`Invalid or unreachable header URL for ${user.username}: ${user.headerImageUrl}`);
-                            return;
-                        }
-
-                        console.log(`Using original method for image header for ${user.username}`);
-
-                        // Use original method for GIF/image replacement
-                        const bgDiv = parentDiv.querySelector('div[style*="background-image"]');
-                        if (bgDiv && !bgDiv.style.backgroundImage.includes(user.headerImageUrl)) {
-                            console.log(`Replacing header background for ${user.username}: ${bgDiv.style.backgroundImage}`);
-                            bgDiv.style.backgroundImage = `url("${user.headerImageUrl}")`;
-                        }
-
-                        const img = parentDiv.querySelector("img");
-                        if (img && img.src !== user.headerImageUrl) {
-                            console.log(`Replacing header img for ${user.username}: ${img.src}`);
-                            img.src = user.headerImageUrl;
-                            img.alt = `Animated header for ${user.username}`;
-                        }
-                    });
+                } else {
+                    const bgDiv = parentDiv.querySelector('div[style*="background-image"]');
+                    if (bgDiv && !bgDiv.style.backgroundImage.includes(user.headerImageUrl)) {
+                        bgDiv.style.backgroundImage = `url("${user.headerImageUrl}")`;
+                    }
+                    const img = parentDiv.querySelector("img");
+                    if (img && img.src !== user.headerImageUrl) {
+                        img.src = user.headerImageUrl;
+                        img.alt = `Animated header for ${user.username}`;
+                    }
                 }
             });
         }
@@ -414,12 +437,16 @@ function createMemeThumb(imageUrl, thumbnailUrl, sourceType, favorites) {
 }
 
 // Load initial state from storage
-chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireEnabled", "quickFireAutoPost", "quickFireText"], (data) => {
+chrome.storage.sync.get(["replaceLikeEnabled", "soundEnabled", "quickFireEnabled", "quickFireAutoPost", "quickFireText", "animatedProfilePicsEnabled"], (data) => {
     likeReplacementEnabled = data.replaceLikeEnabled ?? true;
     soundEnabled = data.soundEnabled ?? false;
     quickFireEnabled = data.quickFireEnabled ?? true;
     quickFireAutoPost = data.quickFireAutoPost ?? true;
     quickFireText = data.quickFireText || "gmichi";
+    animatedProfilePicsEnabled = data.animatedProfilePicsEnabled ?? true;
+    if (animatedProfilePicsEnabled) {
+        fetchAndReplaceProfilePics();
+    }
 
     if (likeReplacementEnabled) {
         replaceLikeButtons();
@@ -473,6 +500,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sidebarCardInjected = false;
             injectSidebarCard();
         }
+    }
+
+    if (message.animatedProfilePicsEnabled !== undefined) {
+        animatedProfilePicsEnabled = message.animatedProfilePicsEnabled;
     }
 });
 
@@ -881,6 +912,10 @@ function openMichiFlyout(event, button) {
                         });
                     }
                     if (key === 'quickFireAutoPost') quickFireAutoPost = toggle.checked;
+                    if (key === 'animatedProfilePicsEnabled') {
+                        animatedProfilePicsEnabled = toggle.checked;
+                        if (toggle.checked) fetchAndReplaceProfilePics();
+                    }
                 });
 
                 row.appendChild(labelEl);
@@ -913,6 +948,7 @@ function openMichiFlyout(event, button) {
 
             panel.appendChild(makeToggle("Sound Effects", "soundEnabled", soundEnabled));
             panel.appendChild(makeToggle("Michi Mode (replace hearts)", "replaceLikeEnabled", likeReplacementEnabled));
+            panel.appendChild(makeToggle("Animated Profile Pics", "animatedProfilePicsEnabled", animatedProfilePicsEnabled));
 
             const hint = document.createElement("div");
             hint.style.cssText = "padding: 12px 0 4px; font-size: 12px; color: rgb(113, 118, 123); line-height: 1.4;";
@@ -2280,7 +2316,6 @@ function replaceAdsWithMichiBanner() {
 // Run on page load and observe for changes
 addMichiButtonToAllToolbars();
 addQuickFireToTweetActions();
-replaceProfilePics();
 replaceLikeButtons();
 injectSidebarCard();
 injectFloatingMichiButton();
@@ -2289,7 +2324,7 @@ replaceAdsWithMichiBanner();
 const observer = new MutationObserver(() => {
     addMichiButtonToAllToolbars();
     addQuickFireToTweetActions();
-    replaceProfilePics();
+    if (animatedProfilePicsEnabled) replaceProfilePics();
     replaceAdsWithMichiBanner();
     if (likeReplacementEnabled) {
         replaceLikeButtons();
@@ -2300,5 +2335,14 @@ const observer = new MutationObserver(() => {
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
+
+// Re-apply profile pic replacements on X SPA navigation
+let lastPathname = window.location.pathname;
+setInterval(() => {
+    if (window.location.pathname !== lastPathname) {
+        lastPathname = window.location.pathname;
+        if (animatedProfilePicsEnabled) replaceProfilePics();
+    }
+}, 1000);
 
 console.info(`michi meme blaster ${version} active!`);
